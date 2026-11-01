@@ -17,9 +17,13 @@ function git(dir, args) {
 const remoteBranches = new Map();
 const ctx = {
   now: new Date().toISOString(),
+  // null when git fails (no repo, timeout): the guard then stays quiet.
   remoteHasBranch(dir, branch) {
-    if (!remoteBranches.has(dir)) remoteBranches.set(dir, new Set((git(dir, ['for-each-ref', '--format=%(refname:strip=3)', 'refs/remotes']) ?? '').split('\n')));
-    return remoteBranches.get(dir).has(branch);
+    if (!remoteBranches.has(dir)) {
+      const refs = git(dir, ['for-each-ref', '--format=%(refname:strip=3)', 'refs/remotes']);
+      remoteBranches.set(dir, refs === null ? null : new Set(refs.split('\n')));
+    }
+    return remoteBranches.get(dir)?.has(branch) ?? null;
   },
   currentBranch: (dir) => git(dir, ['symbolic-ref', '--short', '-q', 'HEAD']) || null,
   readFile(path) {

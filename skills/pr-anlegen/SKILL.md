@@ -45,8 +45,9 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
    node "<Basisordner>/../../scripts/create-pr.mjs" create --repo-dir <repo> --base <ziel> --title "<Titel>" --body-file <datei> --ready
    ```
 
-   Das Skript pusht den Branch (nie `main`, `master`, `beta`, `live`), setzt auf GitHub das Art-Label, erkennt
-   löschende Migrationen und prüft den PR. Ist die Prüfung rot, legt es nichts an und nennt jeden Fehler mit Abhilfe
+   Das Skript pusht den Branch (nie `main`, `master`, `beta`, `live`; auf diese Namen benennt `--rename-to` auch nicht
+   um), setzt auf GitHub das Art-Label, erkennt löschende Migrationen (`database/migrations/` in jeder Tiefe) und
+   prüft den PR. Ist die Prüfung rot, legt es nichts an und nennt jeden Fehler mit Abhilfe
    (Exit 1). Dann die Abhilfe umsetzen und neu aufrufen. Mit `--dry-run` zeigt es Text, Labels und Funde, ohne
    etwas anzulegen.
 6. **Ausgabe.** In der letzten Zeile steht die PR-Adresse, davor stehen Hinweise. Hinweise blockieren nicht. Behebe
@@ -56,6 +57,8 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
 
 - Hub: `release/<name>` → `main` vom ausgecheckten Release-Branch aus.
 - fusion-api-v3: `--head beta --base live`; Rückführung `--head live --base beta`. Feste Branches pusht das Skript nie.
+- Die Kopfzeilen der enthaltenen PRs nicht in den Text kopieren: Weiter unten sind sie ein Fehler (K1). Was für den
+  Release noch gilt, kommt als eigene Option in den Aufruf (`--stop`, `--needs`).
 
 ## Migrationen, die Daten löschen
 
@@ -66,6 +69,10 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
 ## Ändern und fertig melden
 
 - `update --repo-dir <repo> --number <nr> --body-file <datei>` schreibt Text und Kopfzeilen eines offenen PRs neu.
-  `Merge-Stopp:`-Zeilen, die schon am PR stehen, bleiben. Eine Zeile aufheben: `--remove-stop "<Grund>"` mit genau
-  ihrem Text. Mit `--ready` oder `--draft` ändert sich auch der Entwurfsstatus.
+  Jeder Stopp, der schon am PR steht, bleibt, auch eine fette, eingerückte oder leere `Merge-Stopp:`-Zeile weiter
+  unten. Hat der alte Text keine Zeile, aber einen Satz wie „nicht mergen“, wird daraus
+  `Merge-Stopp: <Satz> (übernommen aus dem Text)`. Einen Stopp aufheben: `--remove-stop "<Grund>"` mit genau dem Text
+  nach dem Doppelpunkt, eine leere Zeile mit `--remove-stop ""`. Was entfernt würde, zeigt `--dry-run`.
+- `Braucht:`- und `Paired-with:`-Zeilen übernimmt `update` nicht von selbst: Gib sie wieder als Option an, oder lass
+  sie oben in der Textdatei stehen. Mit `--ready` oder `--draft` ändert sich auch der Entwurfsstatus.
 - `ready --repo-dir <repo> --number <nr>` nimmt einen PR aus dem Entwurf, wenn die Prüfung keine Fehler hat.

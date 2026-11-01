@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBody } from '../lib/body.mjs';
+import { buildBody, carriedStops } from '../lib/body.mjs';
 import { parseRemote } from '../lib/forges.mjs';
 
 const SECTION = '## Abhängigkeiten und Reihenfolge\nKeine.';
@@ -43,6 +43,18 @@ test('a stop is only dropped when it is named', () => {
 
 test('a leading HTML comment stays in the text below the block', () => {
   assert.equal(buildBody({ text: '<!-- note -->\nMerge-Stopp: x\n\nText' }), 'Merge-Stopp: x\n\n<!-- note -->\n\nText\n');
+});
+
+test('carriedStops keeps every stop on the old text, in any form', () => {
+  assert.deepEqual(carriedStops('Merge-Stopp: a\n\nText\n**Merge-Stopp:** b\nMerge-Stopp:', 'github'), ['a', 'b', '']);
+  assert.deepEqual(carriedStops('Text\n  Merge\\-Stopp: escaped', 'bitbucket'), ['escaped']);
+  assert.deepEqual(carriedStops('Intro.\n\nBitte nicht mergen, bis X live ist.', 'github'), ['Bitte nicht mergen, bis X live ist. (übernommen aus dem Text)']);
+  assert.deepEqual(carriedStops('Merge-Stopp: a\n\nBitte nicht mergen.', 'github'), ['a']);
+  assert.deepEqual(carriedStops('Die Liste zeigt PRs mit Merge-Stopp oben.', 'github'), []);
+});
+
+test('an empty carried stop can be removed with an empty --remove-stop', () => {
+  assert.equal(buildBody({ text: 'Text', stops: carriedStops('Merge-Stopp:\n\nx', 'github'), removeStops: [''] }), 'Text\n');
 });
 
 test('parseRemote reads GitHub and Bitbucket origins', () => {

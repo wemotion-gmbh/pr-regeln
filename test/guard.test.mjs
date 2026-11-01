@@ -45,6 +45,15 @@ test('resolves simple literal assignments in later segments', () => {
   assert.deepEqual(splitCommands("$x='a'; echo '$x' $y").at(-1), ['echo', '$x', '$y']);
 });
 
+test('braces and parentheses end a command, also right before a separator', () => {
+  assert.deepEqual(splitCommands('if ($?) { git push -u origin feat/x }; if ($?) { gh pr view }'),
+    [['if'], ['$?'], ['git', 'push', '-u', 'origin', 'feat/x'], ['if'], ['$?'], ['gh', 'pr', 'view']]);
+  assert.deepEqual(splitCommands('git branch -r --contains (git log --format=%H -1 -- a/b.php)'),
+    [['git', 'branch', '-r', '--contains'], ['git', 'log', '--format=%H', '-1', '--', 'a/b.php']]);
+  assert.deepEqual(splitCommands('(cd x && git push)'), [['cd', 'x'], ['git', 'push']]);
+  assert.deepEqual(splitCommands('git log --format="%(refname)" -1'), [['git', 'log', '--format=%(refname)', '-1']]);
+});
+
 test('joins continued lines', () => {
   assert.deepEqual(splitCommands('git push `\n  origin feat/x'), [['git', 'push', 'origin', 'feat/x']]);
   assert.deepEqual(splitCommands('git push \\\n  origin feat/x'), [['git', 'push', 'origin', 'feat/x']]);
@@ -60,7 +69,8 @@ test('a new branch with a wrong name gets a suggestion', () => {
 });
 
 test('good names and non-creating branch commands stay quiet', () => {
-  for (const c of ['git switch -c feat/x', 'git branch -d feature/x', 'git branch --show-current', 'git branch', 'git checkout feature/x']) {
+  for (const c of ['git switch -c feat/x', 'git branch -d feature/x', 'git branch --show-current', 'git branch', 'git checkout feature/x',
+    'git -C x branch -r --contains (git -C x log --format=%H -1 -- a/b.php)', 'if ($?) { git push -q -u origin feat/x }; if ($?) { gh pr view }']) {
     assert.deepEqual(run(c).findings, [], c);
   }
 });
@@ -94,6 +104,19 @@ test('push of a new branch with a wrong name', () => {
   assert.deepEqual(codes(run('git push origin HEAD', { current: 'feature/cur' })), ['K7']);
   assert.deepEqual(codes(run('git push', { current: 'feature/cur' })), ['K7']);
   assert.deepEqual(codes(run('git push origin feat/x:feature/x')), ['K7']);
+});
+
+test('when git cannot tell whether the branch is on the remote, the hook stays quiet', () => {
+  assert.deepEqual(run('git push -u origin feature/old', { remoteHasBranch: () => null }).findings, []);
+  assert.deepEqual(run('git checkout -b feature/x', { remoteHasBranch: () => null }).findings, []);
+});
+
+test('Git Bash drive paths point to the Windows drive', () => {
+  const seen = [];
+  run('cd /f/Users/me/repo && git push origin feature/old; git -C /c/work/app push origin feature/old', {
+    platform: 'win32', remoteHasBranch: (dir) => { seen.push(dir); return true; },
+  });
+  assert.deepEqual(seen, ['F:\\Users\\me\\repo', 'C:\\work\\app']);
 });
 
 test('deletions, fixed branches, tags and unknown directories stay quiet', () => {
@@ -174,7 +197,17 @@ test('before T1 nothing is denied, from T1 on new branches and PRs are', () => {
   assert.equal(run('gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"', { cutoffs: past }).deny, true);
   assert.equal(run(`gh pr create --head feat/x --base main --title t --body "${SECTION}"`, { cutoffs: past }).deny, false);
   assert.equal(run('curl -X POST https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests -d @x.json', { cutoffs: past }).deny, true);
+  assert.equal(run('gh api -X POST repos/o/r/pulls --input pr.json', { cutoffs: past }).deny, true);
   assert.equal(run('git checkout -b feat/x', { cutoffs: past }).deny, false);
+});
+
+test('changing an existing PR through the API is a hint, never a deny', () => {
+  const put = run('curl -X PUT https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests/12 -d @x.json', { cutoffs: past });
+  assert.deepEqual(codes(put), ['P1']);
+  assert.equal(put.deny, false);
+  const patch = run('gh api repos/o/r/pulls/3 -X PATCH --input t.json', { cutoffs: past });
+  assert.deepEqual(codes(patch), ['P1']);
+  assert.equal(patch.deny, false);
 });
 
 // the hook script
@@ -188,7 +221,9 @@ const hook = (input, data) => spawnSync(process.execPath, [GUARD], {
 
 test('the hook prints a hint, counts it and never prints allow', () => {
   const data = mkdtempSync(join(tmpdir(), 'pr-guard-'));
-  const r = hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git checkout -b feature/x' }, cwd: data }, data);
+  const repo = mkdtempSync(join(tmpdir(), 'pr-guard-repo-'));
+  spawnSync('git', ['-C', repo, 'init', '-q']);
+  const r = hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git checkout -b feature/x' }, cwd: repo }, data);
   assert.equal(r.status, 0);
   const out = JSON.parse(r.stdout).hookSpecificOutput;
   assert.equal(out.hookEventName, 'PreToolUse');
@@ -196,6 +231,8 @@ test('the hook prints a hint, counts it and never prints allow', () => {
   assert.equal(out.permissionDecision, undefined);
   assert.doesNotMatch(r.stdout, /allow/);
   assert.equal(JSON.parse(readFileSync(join(data, 'hits.json'), 'utf8')).byCode.K7, 1);
+  const outside = hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git checkout -b feature/x' }, cwd: data }, data);
+  assert.equal(outside.stdout, '');
 });
 
 test('the hook is silent for clean calls and broken input', () => {

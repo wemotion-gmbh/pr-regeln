@@ -74,12 +74,14 @@ export interface HeadBlock {
 }
 
 export interface StopPhrase {
-  kind: 'stop' | 'dependency';
+  kind: 'stop' | 'dependency' | 'mention';
   quote: string;
 }
 
 export const KINDS: readonly string[];
 export const FIXED_BRANCHES: readonly string[];
+export const BITBUCKET_REPOS: readonly string[];
+export function forgeOfRepo(name: string, opts?: { bitbucketRepos?: readonly string[] }): Forge;
 export const TYPE_LABEL_BY_KIND: Readonly<Record<string, string>>;
 export const TYPE_LABELS: readonly string[];
 export const READY_LABEL_OLD: string;
@@ -94,6 +96,7 @@ export function checkBranchName(head: string): BranchCheck;
 export function typeLabelFor(head: string): string | null;
 export function normalizeBody(body: string, forge: Forge): string;
 export function parseHeadBlock(body: string): HeadBlock;
+export function stopLines(body: string): string[];
 export function findStopPhrases(body: string, headEnd?: number): StopPhrase[];
 export function splitUnifiedDiff(diff: string): { path: string; patch: string }[];
 export function deletesData(files: PrFile[]): MigrationResult;

@@ -42,7 +42,7 @@ Stopp und Abhängigkeiten stehen nur als Kopfzeilen ganz oben im PR-Text.
 | Schlüssel | Form | Bedeutung |
 |---|---|---|
 | `Paired-with:` | `Paired-with: <repo> <https-Link>` | Gegenstück in einem anderen Repo, **nur** wenn die Branch-Namen verschieden sind |
-| `Braucht:` | `Braucht: <repo>#<nr>`, danach optional ein Leerzeichen und Freitext | Der genannte PR muss gemergt sein. Eine Zeile je Abhängigkeit |
+| `Braucht:` | `Braucht: <repo>#<nr>`, danach optional ein Satzzeichen (`,` `;` `:` `.`), ein Leerzeichen und Freitext ohne weiteren Verweis | Der genannte PR muss gemergt sein. Eine Zeile je Abhängigkeit |
 | `Merge-Stopp:` | `Merge-Stopp: <Grund>` | Nicht mergen, bis die Zeile entfernt ist. Mehrere Zeilen sind erlaubt, eine je Grund |
 | `Nach dem Merge:` | `Nach dem Merge: <Schritt>` | Nur zur Information (z. B. KB-Seite speichern). Wird nicht ausgewertet |
 
@@ -58,7 +58,7 @@ Nach dem Kopfblock folgen eine Leerzeile, dann `## Abhängigkeiten und Reihenfol
 - **K5 Stopp im Text ohne `Merge-Stopp:`-Zeile.** Siehe 3.3.
 - **K6 `Merge-Stopp:` ohne Grund.**
 
-**Warnungen** (nie rot): `Paired-with:` bei gleichem Branch-Namen; `Braucht:` auf ein Repo, das es in der Organisation nicht gibt; fehlender Abschnitt „Abhängigkeiten und Reihenfolge“.
+**Warnungen** (nie rot): `Paired-with:` bei gleichem Branch-Namen (W2); `Braucht:` auf ein Repo, das es in der Organisation nicht gibt (nicht gebaut, braucht Netz); fehlender Abschnitt „Abhängigkeiten und Reihenfolge“ (W1); das Wort `Merge-Stopp` mitten im Satz ohne `Merge-Stopp:`-Zeile (W3, siehe 3.3).
 
 Auf Bitbucket entfernt die Prüfung vor dem Lesen die Backslashes, die der Bitbucket-Editor vor Markdown-Zeichen setzt (Hub #277).
 
@@ -67,7 +67,7 @@ Auf Bitbucket entfernt die Prüfung vor dem Lesen die Backslashes, die der Bitbu
 
 **Was sie liest:** nur den PR-Text unterhalb des Kopfblocks. Den Abschnitt „Abhängigkeiten und Reihenfolge“ liest sie nicht, denn dort wird die Reihenfolge ausdrücklich beschrieben. Code (in Backticks oder Codeblöcken), HTML-Kommentare und PR-Kommentare liest sie ebenfalls nicht.
 
-**Stoppwendungen:** `nicht mergen`, `do not merge`, `don't merge`, `Merge frühestens`, `merge only`, `[blocked]` und das Wort `Merge-Stopp`. Ein Treffer ist K5, wenn der Kopfblock **keine** `Merge-Stopp:`-Zeile hat. Hat er eine, ist der PR ohnehin gestoppt.
+**Stoppwendungen:** `nicht mergen`, `do not merge`, `don't merge`, `Merge frühestens`, `merge only`, `[blocked]` und das Wort `Merge-Stopp`, wenn es am Zeilenanfang steht (auch nach `-`, `>` oder `#`) oder ein `:`, `bis` oder `until` folgt. Ein Treffer ist K5, wenn der Kopfblock **keine** `Merge-Stopp:`-Zeile hat. Hat er eine, ist der PR ohnehin gestoppt. Steht das Wort sonst mitten im Satz („PRs mit Merge-Stopp erscheinen oben“), beschreibt der Text meist Stopps, statt einen zu setzen; das ist nur die Warnung **W3** (Abspielprobe 6.2).
 
 **Abhängigkeitswendungen:** `#<n> zuerst`, `erst nach #<n>`, `erst mergen, wenn`, `nur zusammen mit`, `only together with`. Ein Treffer ist K5, wenn der Kopfblock weder eine `Merge-Stopp:`- noch eine `Braucht:`- noch eine `Paired-with:`-Zeile hat.
 
@@ -148,7 +148,7 @@ Eingetragen im Marketplace `claude-plugins` als GitHub-Quelle mit Tag und SHA, w
   - neue Branches (`checkout -b`, `switch -c`, `branch <name>`, `worktree add -b`) auf den Namen;
   - `git push` eines Branches mit falschem Namen, den es auf dem Remote noch nicht gibt. Schon gepushte Branches, `main`/`master`/`beta`/`live` und Löschungen lässt er durch;
   - `gh pr create` und `gh pr edit` mit wörtlichem `--title`, `--body` oder `--body-file`, mit `--label`, `--draft`, `--head` und `--base`, mit `checkPr`;
-  - Bitbucket-Aufrufe, die PRs anlegen oder ändern (`POST`/`PUT` auf `…/pullrequests`), und `gh api … /pulls` mit `POST`, wenn sie nicht über `pr-anlegen` laufen. Er verweist dann auf `pr-anlegen`, statt Hilfsskripte zu lesen;
+  - Bitbucket-Aufrufe, die PRs anlegen oder ändern (`POST`/`PUT` auf `…/pullrequests`), und `gh api … /pulls` mit `POST` oder `PATCH`, wenn sie nicht über `pr-anlegen` laufen. Er verweist dann auf `pr-anlegen`, statt Hilfsskripte zu lesen. Verweigern kann er nur das Anlegen; das Ändern eines bestehenden PRs bekommt immer nur einen Hinweis, denn alte PRs werden nie gesperrt;
   - die MCP-Werkzeuge zum Anlegen und Ändern von PRs, mit `checkPr` auf deren Eingabe.
 - Was er nicht sicher lesen kann (Variablen, Hilfsskripte), lässt er durch und gibt nichts aus. Die Prüfung fängt es später.
 - **Vor T1** schreibt er bei einem Fund nur einen Hinweis (`additionalContext`). **Ab T1** verweigert er bei neuen Branches und PRs mit einer deutschen Begründung und der Abhilfe. Er gibt nie „allow“ aus, sonst übersprängen Befehle die Rückfrage.

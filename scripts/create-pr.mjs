@@ -6,11 +6,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  FIXED_BRANCHES, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK, checkBranchName, checkPr, deletesData, normalizeBody, parseHeadBlock,
-  splitUnifiedDiff, typeLabelFor,
+  FIXED_BRANCHES, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK, checkBranchName, checkPr, deletesData, splitUnifiedDiff, typeLabelFor,
 } from '../lib/pr-rules.mjs';
 import { addGithubLabel, bitbucketAuth, bitbucketPr, bitbucketPrUrl, bitbucketSend, exec, fetchPr, parseRemote } from '../lib/forges.mjs';
-import { buildBody } from '../lib/body.mjs';
+import { buildBody, carriedStops } from '../lib/body.mjs';
 import { formatFindings } from '../lib/format.mjs';
 
 const USAGE = `Aufruf:
@@ -74,10 +73,11 @@ function repoOf(dir) {
   return remote;
 }
 
-// Only migrations matter for the data-deleting check; null when the diff cannot be read.
+// Only migrations matter for the data-deleting check, at any depth (fusion keeps them in a subfolder); null when the
+// diff cannot be read.
 function migrationFiles(dir, base, head) {
   tryGit(dir, ['fetch', '-q', 'origin', base]);
-  const diff = tryGit(dir, ['diff', '--unified=3', `origin/${base}...${head}`, '--', 'database/migrations'], { raw: true });
+  const diff = tryGit(dir, ['diff', '--unified=3', `origin/${base}...${head}`, '--', ':(glob)**/database/migrations/**'], { raw: true });
   return diff === null ? null : splitUnifiedDiff(diff);
 }
 
@@ -131,6 +131,7 @@ async function create(o) {
   const fixedHead = FIXED_BRANCHES.includes(head);
   if (o['rename-to']) {
     if (fixedHead) throw new UsageError(`Den festen Branch „${head}“ benenne ich nicht um.`);
+    if (FIXED_BRANCHES.includes(o['rename-to'])) throw new UsageError(`Auf den festen Branch „${o['rename-to']}“ benenne ich nicht um.`);
     if (!checkBranchName(o['rename-to']).ok) throw new UsageError(`„${o['rename-to']}“ hat nicht die Form <art>/<thema>.`);
   } else if (CLOUD_BRANCH.test(head)) {
     throw new UsageError(`Der Branch „${head}“ kommt aus einer Cloud-Sitzung. Mit --rename-to <art>/<thema> unter neuem Namen anlegen.`);
@@ -151,7 +152,7 @@ async function create(o) {
   }
 
   if (o['rename-to']) git(dir, ['branch', '-m', head, prHead]);
-  if (!fixedHead) git(dir, ['push', '-u', 'origin', prHead]);
+  if (!FIXED_BRANCHES.includes(prHead)) git(dir, ['push', '-u', 'origin', prHead]);
 
   let url;
   if (forge === 'github') {
@@ -173,7 +174,10 @@ async function create(o) {
     });
     url = pr?.links?.html?.href ?? `${owner}/${repo}#${pr?.id}`;
   }
-  const s = summary(result);
+  const s = [
+    files === null ? `Migrationen nicht geprüft: Der Diff gegen origin/${o.base} war nicht lesbar. Mit „update“ prüft das Skript sie über die API.` : '',
+    summary(result),
+  ].filter(Boolean).join('\n\n');
   console.log(s ? `${s}\n\n${url}` : url);
   return 0;
 }
@@ -183,7 +187,7 @@ async function bitbucketUpdate(ref, fields) {
   const auth = await bitbucketAuth();
   const current = await bitbucketPr(ref.owner, ref.repo, ref.number, auth);
   await bitbucketSend('PUT', bitbucketPrUrl(ref.owner, ref.repo, ref.number), auth, {
-    title: current.title, description: current.description ?? '', reviewers: (current.reviewers ?? []).map((r) => ({ uuid: r.uuid })), ...fields,
+    title: current.title, description: current.description ?? current.summary?.raw ?? '', reviewers: (current.reviewers ?? []).map((r) => ({ uuid: r.uuid })), ...fields,
   });
 }
 
@@ -193,11 +197,10 @@ async function update(o) {
   const ref = { forge, owner, repo, number: Number(o.number) };
   const pr = await fetchPr(ref);
   const deleting = deletesData(pr.files).deleting;
-  // Stops already on the PR stay unless named in --remove-stop. The Bitbucket migration stop is not set again:
-  // the merge AI removes it after Marc's yes.
-  const current = parseHeadBlock(normalizeBody(pr.body, forge)).stops.filter(Boolean);
+  // Every stop on the PR stays unless named in --remove-stop. The Bitbucket migration stop is not set again:
+  // the merge AI removes it once the yes is given.
   const lines = headLines(o, forge, false);
-  const body = buildBody({ text: readText(o['body-file']), ...lines, stops: [...current, ...lines.stops], removeStops: o.removeStops });
+  const body = buildBody({ text: readText(o['body-file']), ...lines, stops: [...carriedStops(pr.body, forge), ...lines.stops], removeStops: o.removeStops });
   const title = o.title ?? pr.title;
   const draft = o.flags.has('--draft') ? true : o.flags.has('--ready') ? false : pr.draft;
   const add = forge === 'github'

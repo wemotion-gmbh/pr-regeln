@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findStopPhrases } from '../lib/pr-rules.mjs';
+import { checkBody, findStopPhrases } from '../lib/pr-rules.mjs';
 
 const kinds = (body) => findStopPhrases(body, 0).map((p) => p.kind);
 
@@ -11,10 +11,29 @@ test('stop phrases', () => {
   assert.deepEqual(kinds('Merge frühestens morgen.'), ['stop']);
   assert.deepEqual(kinds('[blocked] by infra'), ['stop']);
   assert.deepEqual(kinds('Hier gilt ein Merge-Stopp bis Freitag.'), ['stop']);
+  assert.deepEqual(kinds('Merge-Stopp (beta → live): erst nach dem Release.'), ['stop']);
+  assert.deepEqual(kinds('- **Merge-Stopp** bis die Daten da sind'), ['stop']);
 });
 
 test('negated stop word does not count', () => {
   assert.deepEqual(kinds('Kein Merge-Stopp mehr: the fix is live.'), []);
+});
+
+test('the stop word inside a description is only a mention', () => {
+  assert.deepEqual(kinds('- Der Merge-Stopp eines Release-PRs wartete auf die falsche Person.'), ['mention']);
+  assert.deepEqual(kinds('Es gab keinen PR, der mergebar ist und trotzdem einen Merge-Stopp hat.'), ['mention']);
+  assert.deepEqual(kinds('Der Merge-Stopp ist neu. Bitte nicht mergen.'), ['stop']);
+  const r = checkBody('Die Liste zeigt PRs mit Merge-Stopp oben.\n\n## Abhängigkeiten und Reihenfolge\nKeine.', 'github');
+  assert.deepEqual(r.rules, []);
+  assert.deepEqual(r.warnings.map((f) => f.code), ['W3']);
+  assert.match(r.warnings[0].fix, /Backticks/);
+  assert.deepEqual(checkBody('Merge-Stopp: x\n\nDie Liste zeigt PRs mit Merge-Stopp oben.\n\n## Abhängigkeiten und Reihenfolge\nKeine.', 'github').warnings, []);
+});
+
+test('the K5 fix says what to do when it is no stop', () => {
+  const [k5] = checkBody('Bitte nicht mergen.\n\n## Abhängigkeiten und Reihenfolge\nKeine.', 'github').rules;
+  assert.equal(k5.code, 'K5');
+  assert.match(k5.fix, /Backticks/);
 });
 
 test('dependency phrases', () => {
@@ -31,6 +50,11 @@ test('code, html comments and the dependency section are not read', () => {
   assert.deepEqual(kinds(withSection), []);
   const after = ['## Dependencies and release order', 'only together with x', '## Other', 'erst nach #3'].join('\n');
   assert.deepEqual(kinds(after), ['dependency']);
+});
+
+test('a multi-line comment before the head block does not hide a stop below it', () => {
+  const body = '<!--\nexplains\nthe keys\n-->\nBraucht: example-api#1\n\nBitte nicht mergen.\n\n## Abhängigkeiten und Reihenfolge\nKeine.';
+  assert.deepEqual(checkBody(body, 'github').rules.map((f) => f.code), ['K5']);
 });
 
 test('only text below the head block is read', () => {
