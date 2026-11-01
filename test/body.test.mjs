@@ -51,6 +51,7 @@ test('carriedStops keeps every stop on the old text, in any form', () => {
   assert.deepEqual(carriedStops('Intro.\n\nBitte nicht mergen, bis X live ist.', 'github'), ['Bitte nicht mergen, bis X live ist. (übernommen aus dem Text)']);
   assert.deepEqual(carriedStops('Merge-Stopp: a\n\nBitte nicht mergen.', 'github'), ['a']);
   assert.deepEqual(carriedStops('Die Liste zeigt PRs mit Merge-Stopp oben.', 'github'), []);
+  assert.deepEqual(carriedStops('## Merge-Stopp-Logik\n\nText', 'github'), []);
 });
 
 test('an empty carried stop can be removed with an empty --remove-stop', () => {

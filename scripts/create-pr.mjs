@@ -9,7 +9,7 @@ import {
   FIXED_BRANCHES, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK, checkBranchName, checkPr, deletesData, splitUnifiedDiff, typeLabelFor,
 } from '../lib/pr-rules.mjs';
 import { addGithubLabel, bitbucketAuth, bitbucketPr, bitbucketPrUrl, bitbucketSend, exec, fetchPr, parseRemote } from '../lib/forges.mjs';
-import { buildBody, carriedStops } from '../lib/body.mjs';
+import { FROM_TEXT, buildBody, carriedStops } from '../lib/body.mjs';
 import { formatFindings } from '../lib/format.mjs';
 
 const USAGE = `Aufruf:
@@ -18,10 +18,14 @@ const USAGE = `Aufruf:
       [--paired-with <repo> <url>]... [--after "<schritt>"]... [--dry-run]
   create-pr.mjs update --repo-dir <pfad> --number <nr> --body-file <datei> [--title <titel>] [--ready|--draft]
       [--needs ...] [--stop ...] [--remove-stop "<grund>"]... [--paired-with ...] [--after ...] [--dry-run]
-  create-pr.mjs ready --repo-dir <pfad> --number <nr> [--dry-run]`;
+  create-pr.mjs ready --repo-dir <pfad> --number <nr> [--dry-run]
+Optionen mit Wert gehen auch als --name=wert, ein leerer Wert als --name=.`;
 
 const BITBUCKET_MIGRATION_STOP = 'Marcs Ja fehlt (Migration löscht Daten)';
 const CLOUD_BRANCH = /^(claude\/|ccr-)/;
+// A branch name, never a ref expression: HEAD, refs/..., a refspec (":", "+") or a revision ("~", "^", "@{") would
+// make the push go elsewhere than the checked name.
+const PLAIN_BRANCH = /^(?!HEAD$|refs\/|-)(?!.*\.\.)[\w.\/-]+$/;
 const SINGLE = new Set(['--repo-dir', '--base', '--title', '--body-file', '--head', '--rename-to', '--number']);
 const MULTI = { '--needs': 'needs', '--stop': 'stops', '--remove-stop': 'removeStops', '--after': 'after' };
 const FLAGS = new Set(['--ready', '--draft', '--dry-run']);
@@ -33,13 +37,17 @@ function value(v, name) {
   return v;
 }
 
+// "--name=value" keeps an empty value, which Windows PowerShell 5.1 drops as a separate "" argument.
 function parseArgs(argv) {
   const [command, ...rest] = argv;
   const o = { command, needs: [], stops: [], removeStops: [], after: [], pairedWith: [], flags: new Set() };
   for (let i = 0; i < rest.length; i++) {
-    const a = rest[i];
-    if (SINGLE.has(a)) o[a.slice(2)] = value(rest[++i], a);
-    else if (MULTI[a]) o[MULTI[a]].push(value(rest[++i], a));
+    const eq = rest[i].startsWith('--') ? rest[i].indexOf('=') : -1;
+    const a = eq > 0 ? rest[i].slice(0, eq) : rest[i];
+    const next = () => (eq > 0 ? rest[i].slice(eq + 1) : value(rest[++i], a));
+    if (eq > 0 && !SINGLE.has(a) && !MULTI[a]) throw new UsageError(`${a} nimmt keinen Wert mit „=“.`);
+    if (SINGLE.has(a)) o[a.slice(2)] = next();
+    else if (MULTI[a]) o[MULTI[a]].push(next());
     else if (a === '--paired-with') o.pairedWith.push({ repo: value(rest[++i], a), url: value(rest[++i], a) });
     else if (FLAGS.has(a)) o.flags.add(a);
     else throw new UsageError(`Unbekannte Angabe: ${a}`);
@@ -74,10 +82,12 @@ function repoOf(dir) {
 }
 
 // Only migrations matter for the data-deleting check, at any depth (fusion keeps them in a subfolder); null when the
-// diff cannot be read.
+// diff cannot be read. A fixed head is never pushed, so the PR shows origin/<head>, not the local branch.
 function migrationFiles(dir, base, head) {
-  tryGit(dir, ['fetch', '-q', 'origin', base]);
-  const diff = tryGit(dir, ['diff', '--unified=3', `origin/${base}...${head}`, '--', ':(glob)**/database/migrations/**'], { raw: true });
+  const fixed = FIXED_BRANCHES.includes(head);
+  tryGit(dir, ['fetch', '-q', 'origin', base, ...(fixed ? [head] : [])]);
+  const tip = fixed ? `origin/${head}` : head;
+  const diff = tryGit(dir, ['diff', '--unified=3', `origin/${base}...${tip}`, '--', ':(glob)**/database/migrations/**'], { raw: true });
   return diff === null ? null : splitUnifiedDiff(diff);
 }
 
@@ -128,6 +138,7 @@ async function create(o) {
   const { forge, owner, repo } = repoOf(dir);
   const head = o.head ?? tryGit(dir, ['symbolic-ref', '--short', '-q', 'HEAD']);
   if (!head) throw new UsageError('Kein Branch ausgecheckt; --head angeben.');
+  if (!PLAIN_BRANCH.test(head)) throw new UsageError(`--head nimmt nur Branch-Namen, keinen Ausdruck wie „${head}“.`);
   const fixedHead = FIXED_BRANCHES.includes(head);
   if (o['rename-to']) {
     if (fixedHead) throw new UsageError(`Den festen Branch „${head}“ benenne ich nicht um.`);
@@ -175,7 +186,11 @@ async function create(o) {
     url = pr?.links?.html?.href ?? `${owner}/${repo}#${pr?.id}`;
   }
   const s = [
-    files === null ? `Migrationen nicht geprüft: Der Diff gegen origin/${o.base} war nicht lesbar. Mit „update“ prüft das Skript sie über die API.` : '',
+    files === null
+      ? `Migrationen nicht geprüft: Der Diff gegen origin/${o.base} war nicht lesbar. ${forge === 'github'
+        ? 'Mit „update“ prüft das Skript sie über die API.'
+        : 'Die Merge-KI prüft sie vor dem Merge.'}`
+      : '',
     summary(result),
   ].filter(Boolean).join('\n\n');
   console.log(s ? `${s}\n\n${url}` : url);
@@ -200,7 +215,10 @@ async function update(o) {
   // Every stop on the PR stays unless named in --remove-stop. The Bitbucket migration stop is not set again:
   // the merge AI removes it once the yes is given.
   const lines = headLines(o, forge, false);
-  const body = buildBody({ text: readText(o['body-file']), ...lines, stops: [...carriedStops(pr.body, forge), ...lines.stops], removeStops: o.removeStops });
+  const carried = carriedStops(pr.body, forge);
+  const body = buildBody({ text: readText(o['body-file']), ...lines, stops: [...carried, ...lines.stops], removeStops: o.removeStops });
+  const fromText = carried.filter((s) => s.endsWith(FROM_TEXT) && !o.removeStops.includes(s))
+    .map((s) => `Aus dem alten Text als Stopp übernommen: „Merge-Stopp: ${s}“. Ist es keiner, mit --remove-stop "${s}" aufheben.`);
   const title = o.title ?? pr.title;
   const draft = o.flags.has('--draft') ? true : o.flags.has('--ready') ? false : pr.draft;
   const add = forge === 'github'
@@ -209,7 +227,10 @@ async function update(o) {
   const labels = [...pr.labels, ...add];
   const result = checkPr({ ...pr, title, body, draft, labels });
 
-  if (o.flags.has('--dry-run')) return dryRun({ ...pr, draft, title, labels, files: pr.files, deleting, body }, result);
+  if (o.flags.has('--dry-run')) {
+    if (fromText.length) console.log(`${fromText.join('\n')}\n`);
+    return dryRun({ ...pr, draft, title, labels, files: pr.files, deleting, body }, result);
+  }
   if (blocking(result).length) {
     console.error(summary(result));
     return 1;
@@ -222,7 +243,7 @@ async function update(o) {
   } else {
     await bitbucketUpdate(ref, { title, description: body, draft });
   }
-  const s = summary(result);
+  const s = [...fromText, summary(result)].filter(Boolean).join('\n\n');
   console.log(s ? `${s}\n\n${pr.url}` : pr.url);
   return 0;
 }

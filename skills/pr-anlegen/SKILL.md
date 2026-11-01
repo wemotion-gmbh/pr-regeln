@@ -56,7 +56,8 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
 ## Release- und Rückführungs-PRs
 
 - Hub: `release/<name>` → `main` vom ausgecheckten Release-Branch aus.
-- fusion-api-v3: `--head beta --base live`; Rückführung `--head live --base beta`. Feste Branches pusht das Skript nie.
+- fusion-api-v3: `--head beta --base live`; Rückführung `--head live --base beta`. Feste Branches pusht das Skript nie;
+  es prüft dann den Stand auf dem Remote (`origin/beta`). `--head` nimmt nur einen Branch-Namen, nie `HEAD` oder `refs/…`.
 - Die Kopfzeilen der enthaltenen PRs nicht in den Text kopieren: Weiter unten sind sie ein Fehler (K1). Was für den
   Release noch gilt, kommt als eigene Option in den Aufruf (`--stop`, `--needs`).
 
@@ -71,8 +72,9 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
 - `update --repo-dir <repo> --number <nr> --body-file <datei>` schreibt Text und Kopfzeilen eines offenen PRs neu.
   Jeder Stopp, der schon am PR steht, bleibt, auch eine fette, eingerückte oder leere `Merge-Stopp:`-Zeile weiter
   unten. Hat der alte Text keine Zeile, aber einen Satz wie „nicht mergen“, wird daraus
-  `Merge-Stopp: <Satz> (übernommen aus dem Text)`. Einen Stopp aufheben: `--remove-stop "<Grund>"` mit genau dem Text
-  nach dem Doppelpunkt, eine leere Zeile mit `--remove-stop ""`. Was entfernt würde, zeigt `--dry-run`.
+  `Merge-Stopp: <Satz> (übernommen aus dem Text)`; die Ausgabe nennt ihn. Einen Stopp aufheben: `--remove-stop "<Grund>"`
+  mit genau dem Text nach dem Doppelpunkt, eine leere Zeile mit `--remove-stop=` (so geht es auch in PowerShell 5.1,
+  die `""` weglässt). Was entfernt würde, zeigt `--dry-run`.
 - `Braucht:`- und `Paired-with:`-Zeilen übernimmt `update` nicht von selbst: Gib sie wieder als Option an, oder lass
   sie oben in der Textdatei stehen. Mit `--ready` oder `--draft` ändert sich auch der Entwurfsstatus.
 - `ready --repo-dir <repo> --number <nr>` nimmt einen PR aus dem Entwurf, wenn die Prüfung keine Fehler hat.

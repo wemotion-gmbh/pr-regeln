@@ -30,6 +30,12 @@ test('the stop word inside a description is only a mention', () => {
   assert.deepEqual(checkBody('Merge-Stopp: x\n\nDie Liste zeigt PRs mit Merge-Stopp oben.\n\n## Abhängigkeiten und Reihenfolge\nKeine.', 'github').warnings, []);
 });
 
+test('the stop word inside a compound word is neither a stop nor a mention', () => {
+  assert.deepEqual(kinds('- Merge-Stopp-Zeilen bleiben erhalten.'), []);
+  assert.deepEqual(kinds('## Merge-Stopp-Logik'), []);
+  assert.deepEqual(kinds('Die Merge-Stopp-Zeile steht oben.'), []);
+});
+
 test('the K5 fix says what to do when it is no stop', () => {
   const [k5] = checkBody('Bitte nicht mergen.\n\n## Abhängigkeiten und Reihenfolge\nKeine.', 'github').rules;
   assert.equal(k5.code, 'K5');
