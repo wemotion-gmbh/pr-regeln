@@ -97,5 +97,6 @@ export function parseHeadBlock(body: string): HeadBlock;
 export function findStopPhrases(body: string, headEnd?: number): StopPhrase[];
 export function splitUnifiedDiff(diff: string): { path: string; patch: string }[];
 export function deletesData(files: PrFile[]): MigrationResult;
+export function checkBody(body: string, forge: Forge): { rules: Finding[]; warnings: Finding[]; headBlock: HeadBlock };
 export function isNewPr(createdAt: string | null | undefined, cutoffs?: Cutoffs): boolean;
 export function checkPr(pr: PrInput, opts?: { cutoffs?: Cutoffs }): CheckResult;
