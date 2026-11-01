@@ -1,0 +1,11 @@
+{
+  "name": "pr-regeln",
+  "version": "1.0.0",
+  "description": "PR-Regeln für alle Repos von wemotion: ein Hook weist beim Anlegen von Branches und PRs auf Regelverstöße hin (ab dem Stichtag T1 verweigert er sie), der Skill pr-anlegen legt PRs auf GitHub und Bitbucket mit Kopfzeilen, Art-Label und Migrationsprüfung an und legt nichts an, wenn die Prüfung rot ist",
+  "author": {
+    "name": "wemotion GmbH"
+  },
+  "repository": "https://github.com/wemotion-gmbh/pr-regeln",
+  "homepage": "https://github.com/wemotion-gmbh/pr-regeln",
+  "keywords": ["pull-request", "branch", "hook", "pr-anlegen", "regeln"]
+}
