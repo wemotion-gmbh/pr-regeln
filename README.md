@@ -14,7 +14,7 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 - **Kopfzeilen** ganz oben im PR-Text, in Spalte 0: `Paired-with: <repo> <https-Link>`, `Braucht: <repo>#<nr>`, `Merge-Stopp: <Grund>`, `Nach dem Merge: <Schritt>`. Jeder Stopp steht als `Merge-Stopp:`-Zeile, nie nur im Text. Fehlt die Zeile, gilt nichts; „keiner“ oder „-“ ist ein Fehler.
 - **Branch-Namen** `<art>/<thema>` mit den Arten `feat`, `fix`, `hotfix`, `chore`, `refactor`, `docs`, `test`, `part`, `release`, `revert`. Feste Branches (`main`, `master`, `beta`, `live`), Bot-PRs und Branches des Revert-Knopfs sind immer erlaubt.
 - **Art-Labels** (nur GitHub) setzt die KI aus der Branch-Art: `hotfix` 🚑 Hotfix, `part` 🧩 Teilschritt, `revert` ⏪ Rücksetzen, `chore`/`refactor`/`docs`/`test` 🔧 Wartung, sonst keins.
-- **Migrationen, die Daten löschen** (hinzugefügte Zeile in `up()` einer Datei unter `database/migrations/`): auf GitHub rot, bis `🔑 Marcs Ja` dran ist; auf Bitbucket eine Warnung und eine `Merge-Stopp:`-Zeile. Diese Regel gilt immer und für alle PRs.
+- **Migrationen, die Daten löschen** (hinzugefügte Zeile außerhalb von `down()` einer Datei in einem Ordner `database/migrations/`): auf GitHub rot, bis `🔑 Marcs Ja` dran ist; auf Bitbucket eine Warnung und eine `Merge-Stopp:`-Zeile. Diese Regel gilt immer und für alle PRs.
 
 ## Stichtage
 
