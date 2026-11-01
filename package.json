@@ -1,0 +1,27 @@
+{
+  "name": "pr-regeln",
+  "version": "1.0.0",
+  "description": "PR-Regeln für alle Repos von wemotion: Regeldatei, Prüfprogramm und Claude-Code-Plugin",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/pr-rules.d.ts",
+      "default": "./lib/pr-rules.mjs"
+    }
+  },
+  "bin": {
+    "pr-regeln": "cli.mjs"
+  },
+  "files": [
+    "lib/",
+    "cli.mjs"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "repository": "https://github.com/wemotion-gmbh/pr-regeln"
+}
