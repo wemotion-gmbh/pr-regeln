@@ -151,8 +151,9 @@ test('comments, merges and reads through the API stay quiet', () => {
   }
 });
 
-test('calls through pr-anlegen stay quiet', () => {
-  assert.deepEqual(run('node scripts/pr-anlegen.mjs create --repo-dir . --base main --title t --body-file b.md --ready').findings, []);
+test('calls through the pr-anlegen script stay quiet', () => {
+  assert.deepEqual(run('node scripts/create-pr.mjs create --repo-dir . --base main --title t --body-file b.md --ready').findings, []);
+  assert.deepEqual(run('node "$base/../../scripts/create-pr.mjs" update --number 3 --body-file b.md; curl -X PUT https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests/3').findings, []);
 });
 
 // MCP tools
