@@ -69,6 +69,24 @@ test('--head takes a plain branch name only, never a ref expression', () => {
   }
 });
 
+test('a short ref name never pushes a fixed branch', () => {
+  const dir = repo('beta');
+  commit(dir, 'README.md', 'x');
+  const remote = mkdtempSync(join(tmpdir(), 'create-pr-remote-'));
+  git(remote, 'init', '-q', '--bare');
+  git(dir, 'remote', 'set-url', '--push', 'origin', remote);
+  git(dir, 'push', '-q', 'origin', 'beta', 'beta:live');
+  const before = execFileSync('git', ['-C', remote, 'rev-parse', 'beta', 'live'], { encoding: 'utf8', env: ENV });
+  commit(dir, 'later.md', 'y');
+  git(dir, 'branch', '-f', 'live', 'beta');
+  for (const head of ['heads/beta', 'heads/live']) {
+    const r = spawnSync(process.execPath, [SCRIPT, 'create', '--repo-dir', dir, '--base', 'main', '--head', head, '--title', 't',
+      '--body-file', join(dir, 'body.md'), '--ready'], { encoding: 'utf8', env: ENV });
+    assert.notEqual(r.status, 0, head);
+  }
+  assert.equal(execFileSync('git', ['-C', remote, 'rev-parse', 'beta', 'live'], { encoding: 'utf8', env: ENV }), before);
+});
+
 test('migrations in a subfolder are found', () => {
   const dir = repo('feat/x');
   commit(dir, 'README.md', 'x');

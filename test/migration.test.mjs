@@ -30,6 +30,17 @@ test('dropColumn in up() deletes data', () => {
   assert.deepEqual(r, { deleting: true, files: ['database/migrations/2026_01_02_drop_legacy.php'] });
 });
 
+test('a helper method after down() counts, since up() may call it', () => {
+  const patch = NEW_MIGRATION.replace("$table->id();", '$this->dropLegacy();').replace(
+    "+    }\n+};",
+    "+    }\n+\n+    private function dropLegacy(): void\n+    {\n+        Schema::table('examples', fn (Blueprint $t) => $t->dropColumn('legacy'));\n+    }\n+};",
+  );
+  assert.match(patch, /private function dropLegacy/);
+  assert.equal(deletesData([{ path: 'database/migrations/x.php', patch }]).deleting, true);
+  const header = "@@ -40,3 +40,4 @@ private function dropLegacy(): void\n     {\n+        $table->dropColumn('legacy');\n     }";
+  assert.equal(deletesData([{ path: 'database/migrations/x.php', patch: header }]).deleting, true);
+});
+
 test('a hunk without a visible function counts as up()', () => {
   const patch = '@@ -10,3 +10,4 @@\n         $x = 1;\n+        DB::table(\'examples\')->delete();\n     }';
   assert.equal(deletesData([{ path: 'database/migrations/x.php', patch }]).deleting, true);

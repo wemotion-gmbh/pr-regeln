@@ -163,7 +163,8 @@ async function create(o) {
   }
 
   if (o['rename-to']) git(dir, ['branch', '-m', head, prHead]);
-  if (!FIXED_BRANCHES.includes(prHead)) git(dir, ['push', '-u', 'origin', prHead]);
+  // The full refspec pushes exactly the checked name; a short one like "heads/beta" would resolve to a fixed branch.
+  if (!FIXED_BRANCHES.includes(prHead)) git(dir, ['push', '-u', 'origin', `refs/heads/${prHead}:refs/heads/${prHead}`]);
 
   let url;
   if (forge === 'github') {
