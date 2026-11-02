@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { splitCommands } from '../lib/shell.mjs';
-import { evaluate } from '../lib/guard.mjs';
+import { evaluate, hookMessage } from '../lib/guard.mjs';
 
 const past = { T0: '2026-01-01T00:00:00Z', T1: '2026-01-05T00:00:00Z', T2: '2026-01-08T00:00:00Z' };
 const SECTION = '## Abhängigkeiten und Reihenfolge\nKeine.';
@@ -159,12 +159,12 @@ test('gh pr edit checks the text and added labels, but never denies', () => {
 // API calls
 
 test('PRs created or changed through the API point to pr-anlegen', () => {
-  const api = 'https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests';
+  const api = 'https://api.bitbucket.org/2.0/repositories/wemotion-bucket/r/pullrequests';
   assert.deepEqual(codes(run(`curl -s -X POST ${api} -d @x.json`)), ['P1']);
   assert.deepEqual(codes(run(`curl.exe -s -L -X PUT "${api}/12" --data @x.json`)), ['P1']);
-  assert.deepEqual(codes(run('& "$sp\\bb-api.ps1" -Method POST -Path "repositories/ws/r/pullrequests" -BodyFile x.json')), ['P1']);
-  assert.deepEqual(codes(run('gh api -X POST repos/o/r/pulls -f title=x')), ['P1']);
-  assert.deepEqual(codes(run('gh api repos/o/r/pulls --input pr.json')), ['P1']);
+  assert.deepEqual(codes(run('& "$sp\\bb-api.ps1" -Method POST -Path "repositories/wemotion-bucket/r/pullrequests" -BodyFile x.json')), ['P1']);
+  assert.deepEqual(codes(run('gh api -X POST repos/wemotion-gmbh/r/pulls -f title=x')), ['P1']);
+  assert.deepEqual(codes(run('gh api repos/wemotion-gmbh/r/pulls --input pr.json')), ['P1']);
 });
 
 test('comments, merges and reads through the API stay quiet', () => {
@@ -182,30 +182,110 @@ test('calls through the pr-anlegen script stay quiet', () => {
 // MCP tools
 
 test('MCP create and update tools are checked on their input', () => {
-  const create = evaluate('mcp__github__create_pull_request', { owner: 'o', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' }, ctx());
+  const create = evaluate('mcp__github__create_pull_request', { owner: 'wemotion-gmbh', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' }, ctx());
   assert.deepEqual(codes(create).sort(), ['K2', 'K7', 'W1']);
-  const update = evaluate('mcp__github__update_pull_request', { owner: 'o', repo: 'r', pullNumber: 3, body: 'Braucht: nichts' }, ctx({ cutoffs: past }));
+  const update = evaluate('mcp__github__update_pull_request', { owner: 'wemotion-gmbh', repo: 'r', pullNumber: 3, body: 'Braucht: nichts' }, ctx({ cutoffs: past }));
   assert.deepEqual(codes(update).sort(), ['K2', 'W1']);
   assert.equal(update.deny, false);
 });
 
-// deny only from T1 on
+// deny only from T1 on, only new PRs, only in wemotion repositories
 
-test('before T1 nothing is denied, from T1 on new branches and PRs are', () => {
-  assert.equal(run('git checkout -b feature/x').deny, false);
-  assert.equal(run('git checkout -b feature/x', { cutoffs: past }).deny, true);
-  assert.equal(run('gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"', { cutoffs: past }).deny, true);
-  assert.equal(run(`gh pr create --head feat/x --base main --title t --body "${SECTION}"`, { cutoffs: past }).deny, false);
-  assert.equal(run('curl -X POST https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests -d @x.json', { cutoffs: past }).deny, true);
-  assert.equal(run('gh api -X POST repos/o/r/pulls --input pr.json', { cutoffs: past }).deny, true);
-  assert.equal(run('git checkout -b feat/x', { cutoffs: past }).deny, false);
+const OURS = { remoteUrl: () => 'https://github.com/wemotion-gmbh/example.git' };
+const FOREIGN = { remoteUrl: () => 'git@github.com:someone/example.git' };
+
+test('before T1 nothing is denied, from T1 on new PRs in wemotion repositories are', () => {
+  const bad = 'gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"';
+  assert.equal(run(bad, OURS).deny, false);
+  assert.equal(run(bad, { ...OURS, cutoffs: past }).deny, true);
+  assert.equal(run(`gh pr create --head feat/x --base main --title t --body "${SECTION}"`, { ...OURS, cutoffs: past }).deny, false);
+  assert.equal(run('gh pr create -R wemotion-gmbh/r --head feat/x --base main --title t --body "Merge-Stopp: keiner"', { cutoffs: past }).deny, true);
+  assert.equal(run('curl -X POST https://api.bitbucket.org/2.0/repositories/wemotion-bucket/r/pullrequests -d @x.json', { cutoffs: past }).deny, true);
+  assert.equal(run('gh api -X POST repos/wemotion-gmbh/r/pulls --input pr.json', { cutoffs: past }).deny, true);
+  const mcp = { owner: 'wemotion-gmbh', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' };
+  assert.equal(evaluate('mcp__github__create_pull_request', mcp, ctx({ cutoffs: past })).deny, true);
+});
+
+test('new branches and pushes get a hint, never a deny, so session branches like claude/... can still be pushed', () => {
+  for (const c of ['git checkout -b feature/x', 'git branch backup-before-rebase', 'git worktree add -b wip ../wip', 'git push -u origin claude/foo-abc123']) {
+    const r = run(c, { ...OURS, cutoffs: past });
+    assert.deepEqual(codes(r), ['K7'], c);
+    assert.equal(r.deny, false, c);
+  }
+});
+
+test('a PR whose repository cannot be told gets a hint, not a deny', () => {
+  const r = run('gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"', { cutoffs: past, remoteUrl: () => null });
+  assert.ok(codes(r).includes('K2'));
+  assert.equal(r.deny, false);
+  assert.equal(run('gh api -X POST repos/o/r/pulls --input pr.json', { cutoffs: past }).deny, false);
+});
+
+test('outside wemotion the hook stays quiet', () => {
+  for (const c of ['git checkout -b feature/x', 'git push -u origin claude/foo-abc123', 'gh pr create --head feature/x --base main --title t --body "Merge-Stopp: keiner"',
+    'gh pr edit 12 --body "Merge-Stopp: keiner"']) {
+    assert.deepEqual(run(c, { ...FOREIGN, cutoffs: past }).findings, [], c);
+  }
+  for (const c of ['gh pr create -R someone/r --head feature/x --base main --title t --body "Merge-Stopp: keiner"',
+    'gh api -X POST repos/someone/r/pulls --input pr.json', 'curl -X POST https://api.bitbucket.org/2.0/repositories/someone/r/pullrequests -d @x.json']) {
+    assert.deepEqual(run(c, { ...OURS, cutoffs: past }).findings, [], c);
+  }
+  const mcp = { owner: 'someone', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' };
+  assert.deepEqual(evaluate('mcp__github__create_pull_request', mcp, ctx({ cutoffs: past })).findings, []);
+  assert.deepEqual(evaluate('mcp__github__update_pull_request', { owner: 'someone', repo: 'r', pullNumber: 3, body: 'Braucht: nichts' }, ctx()).findings, []);
+});
+
+test('gh api with the {owner} placeholder takes the owner from the origin remote', () => {
+  for (const c of ['gh api -X POST repos/{owner}/{repo}/pulls --input pr.json', 'gh api -X POST repos/:owner/:repo/pulls --input pr.json']) {
+    const ours = run(c, { ...OURS, cutoffs: past });
+    assert.deepEqual(codes(ours), ['P1'], c);
+    assert.equal(ours.deny, true, c);
+    assert.deepEqual(run(c, { ...FOREIGN, cutoffs: past }).findings, [], c);
+    const unknown = run(c, { cutoffs: past });
+    assert.deepEqual(codes(unknown), ['P1'], c);
+    assert.equal(unknown.deny, false, c);
+  }
+});
+
+test('the remote forms of the team count as wemotion, an unknown host as unknown', () => {
+  const bad = 'gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"';
+  for (const url of ['git@bitbucket.org:wemotion-bucket/x.git', 'https://user@bitbucket.org/wemotion-bucket/x.git',
+    'git@github.com:wemotion-gmbh/x.git', 'ssh://git@ssh.github.com:443/wemotion-gmbh/x.git']) {
+    assert.equal(run(bad, { cutoffs: past, remoteUrl: () => url }).deny, true, url);
+  }
+  const alias = run(bad, { cutoffs: past, remoteUrl: () => 'git@github-work:wemotion-gmbh/x.git' });
+  assert.ok(codes(alias).includes('K2'));
+  assert.equal(alias.deny, false);
+});
+
+test('an MCP call names the Bitbucket workspace', () => {
+  const input = { workspace: 'wemotion-bucket', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' };
+  assert.equal(evaluate('mcp__bitbucket__create_pull_request', input, ctx({ cutoffs: past })).deny, true);
+});
+
+test('the remote is looked up only when there is a finding', () => {
+  const seen = [];
+  run('git status; git diff; git switch -c feat/x', { remoteUrl: (dir) => { seen.push(dir); return null; } });
+  assert.deepEqual(seen, []);
+  run('git checkout -b feature/x', { remoteUrl: (dir) => { seen.push(dir); return null; } });
+  assert.deepEqual(seen, ['/repo']);
+});
+
+test('a hint does not announce a block', () => {
+  assert.doesNotMatch(hookMessage({ findings: [{ code: 'K7', message: 'm' }], deny: false }), /noch keine Sperre/);
+});
+
+test('with the published cutoffs a new PR is denied from 02.11.2026 15:00 Berlin on', () => {
+  const bad = 'gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"';
+  assert.equal(run(bad, { ...OURS, cutoffs: undefined, now: '2026-11-02T13:59:59Z' }).deny, false);
+  assert.equal(run(bad, { ...OURS, cutoffs: undefined, now: '2026-11-02T14:00:00Z' }).deny, true);
 });
 
 test('changing an existing PR through the API is a hint, never a deny', () => {
-  const put = run('curl -X PUT https://api.bitbucket.org/2.0/repositories/ws/r/pullrequests/12 -d @x.json', { cutoffs: past });
+  const put = run('curl -X PUT https://api.bitbucket.org/2.0/repositories/wemotion-bucket/r/pullrequests/12 -d @x.json', { cutoffs: past });
   assert.deepEqual(codes(put), ['P1']);
   assert.equal(put.deny, false);
-  const patch = run('gh api repos/o/r/pulls/3 -X PATCH --input t.json', { cutoffs: past });
+  const patch = run('gh api repos/wemotion-gmbh/r/pulls/3 -X PATCH --input t.json', { cutoffs: past });
   assert.deepEqual(codes(patch), ['P1']);
   assert.equal(patch.deny, false);
 });
@@ -233,6 +313,16 @@ test('the hook prints a hint, counts it and never prints allow', () => {
   assert.equal(JSON.parse(readFileSync(join(data, 'hits.json'), 'utf8')).byCode.K7, 1);
   const outside = hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git checkout -b feature/x' }, cwd: data }, data);
   assert.equal(outside.stdout, '');
+});
+
+test('the hook reads the origin remote and stays silent in a foreign repository', () => {
+  const data = mkdtempSync(join(tmpdir(), 'pr-guard-'));
+  const repo = mkdtempSync(join(tmpdir(), 'pr-guard-repo-'));
+  spawnSync('git', ['-C', repo, 'init', '-q']);
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/someone/example.git']);
+  const r = hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git checkout -b feature/x' }, cwd: repo }, data);
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '');
 });
 
 test('the hook is silent for clean calls and broken input', () => {

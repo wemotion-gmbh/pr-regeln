@@ -19,7 +19,7 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 
 ## Stichtage
 
-`CUTOFFS` in `lib/pr-rules.mjs` hat `T0`, `T1` und `T2`. Solange sie `null` sind, ist kein PR „neu“: Die Prüfung ist bis auf die Migrationsregel grün mit Hinweisen, und der Hook verweigert nie. Ab `T1` sind die Funde neuer PRs Fehler, und der Hook verweigert neue Branches und PRs mit falschem Namen oder Text. Ab `T2` zählt auch bei alten PRs nur noch „kein Entwurf“, und Labels, freier Text und Kommentare zählen nicht mehr als Stopp.
+`CUTOFFS` in `lib/pr-rules.mjs` hat `T0`, `T1` und `T2`. Solange sie `null` sind, ist kein PR „neu“: Die Prüfung ist bis auf die Migrationsregel grün mit Hinweisen, und der Hook verweigert nie. Ab `T1` sind die Funde neuer PRs Fehler, und der Hook verweigert neue PRs mit falschem Branch-Namen oder Text. Ab `T2` zählt auch bei alten PRs nur noch „kein Entwurf“, und Labels, freier Text und Kommentare zählen nicht mehr als Stopp.
 
 Seit Version 1.2.0 sind alle drei gesetzt, auf denselben Zeitpunkt: **02.11.2026 15:00 Berlin** (`2026-11-02T14:00:00Z`). Ein PR, der ab dann angelegt wird, muss die Regeln erfüllen. Ältere PRs fallen nie durch, ihre Funde bleiben Hinweise, bis auf die Migrationsregel.
 
@@ -43,7 +43,7 @@ Eingetragen im Marketplace [claude-plugins](https://github.com/wemotion-gmbh/cla
 /plugin install pr-regeln@wemotion
 ```
 
-- **Hook** (PreToolUse auf `Bash|PowerShell` und auf die MCP-Werkzeuge zum Anlegen und Ändern von PRs). Er prüft neue Branches, den Push neuer Branches, `gh pr create` und `gh pr edit`, PR-Aufrufe direkt über die API von GitHub und Bitbucket und die MCP-Werkzeuge. Text in Heredocs, Here-Strings, `echo` und `grep` lässt er aus; was er nicht sicher lesen kann, lässt er durch. Vor `T1` gibt er bei einem Fund nur einen Hinweis, ab `T1` verweigert er. „Erlauben“ gibt er nie aus, und fällt er aus, läuft der Befehl weiter. Treffer zählt er in `${CLAUDE_PLUGIN_DATA}/hits.json`.
+- **Hook** (PreToolUse auf `Bash|PowerShell` und auf die MCP-Werkzeuge zum Anlegen und Ändern von PRs). Er prüft neue Branches, den Push neuer Branches, `gh pr create` und `gh pr edit`, PR-Aufrufe direkt über die API von GitHub und Bitbucket und die MCP-Werkzeuge. Text in Heredocs, Here-Strings, `echo` und `grep` lässt er aus; was er nicht sicher lesen kann, lässt er durch. Verweigern kann er nur das Anlegen eines PRs, und nur ab `T1` und in einem Repo von `wemotion-gmbh` oder `wemotion-bucket` (aus `--repo`, der API-Adresse, dem MCP-Aufruf oder dem Remote `origin`; bei `gh api` mit `{owner}` aus dem Remote). Lässt sich das Repo nicht bestimmen, etwa bei einem SSH-Host-Alias, gibt es nur einen Hinweis. Neue Branches, Pushes und Änderungen an PRs bekommen nur einen Hinweis, damit Sitzungs-Branches wie `claude/…` gepusht werden können; `pr-anlegen` benennt sie vor dem PR um. In fremden Repos sagt er nichts. „Erlauben“ gibt er nie aus, und fällt er aus, läuft der Befehl weiter. Treffer zählt er in `${CLAUDE_PLUGIN_DATA}/hits.json`.
 - **Skill `pr-anlegen`** mit dem Skript `scripts/create-pr.mjs` (`create`, `update`, `ready`). Er schreibt die Kopfzeilen, setzt das Art-Label, erkennt löschende Migrationen, prüft den PR und legt bei Rot nichts an. Aufruf und Optionen stehen in [skills/pr-anlegen/SKILL.md](skills/pr-anlegen/SKILL.md).
 
 ## Umstellungslauf

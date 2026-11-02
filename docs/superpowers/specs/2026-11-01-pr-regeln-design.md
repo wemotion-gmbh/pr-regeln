@@ -153,7 +153,8 @@ Eingetragen im Marketplace `claude-plugins` als GitHub-Quelle mit Tag und SHA, w
   - Bitbucket-Aufrufe, die PRs anlegen oder ändern (`POST`/`PUT` auf `…/pullrequests`), und `gh api … /pulls` mit `POST` oder `PATCH`, wenn sie nicht über `pr-anlegen` laufen. Er verweist dann auf `pr-anlegen`, statt Hilfsskripte zu lesen. Verweigern kann er nur das Anlegen; das Ändern eines bestehenden PRs bekommt immer nur einen Hinweis, denn alte PRs werden nie gesperrt;
   - die MCP-Werkzeuge zum Anlegen und Ändern von PRs, mit `checkPr` auf deren Eingabe.
 - Was er nicht sicher lesen kann (Variablen, Hilfsskripte), lässt er durch und gibt nichts aus. Die Prüfung fängt es später.
-- **Vor T1** schreibt er bei einem Fund nur einen Hinweis (`additionalContext`). **Ab T1** verweigert er bei neuen Branches und PRs mit einer deutschen Begründung und der Abhilfe. Er gibt nie „allow“ aus, sonst übersprängen Befehle die Rückfrage.
+- **Vor T1** schreibt er bei einem Fund nur einen Hinweis (`additionalContext`). **Ab T1** verweigert er neue PRs mit einer deutschen Begründung und der Abhilfe. Er gibt nie „allow“ aus, sonst übersprängen Befehle die Rückfrage.
+- **Seit 1.2.1 (02.11., meine Entscheidung nach der Prüfung von claude-plugins#30):** Verweigert wird nur das Anlegen eines PRs in einem Repo von `wemotion-gmbh` oder `wemotion-bucket`. Neue Branches und Pushes bekommen nur einen Hinweis, sonst ließen sich Sitzungs-Branches wie `claude/…` (Claude Code im Web) und lokale Hilfs-Branches nicht mehr anlegen oder pushen; `pr-anlegen` benennt den Branch vor dem PR um. In fremden Repos schweigt der Hook, weil die Regeln dort nicht gelten.
 - Treffer zählt er in `${CLAUDE_PLUGIN_DATA}`. Bevor er verweigern darf, wird er gegen die Werkzeugaufrufe der letzten Wochen aus den Sitzungsprotokollen abgespielt. Ziel: null falsche Verweigerungen.
 
 **Skill `pr-anlegen`** mit dem Skript `scripts/pr-anlegen.mjs`:

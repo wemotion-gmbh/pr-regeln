@@ -1,4 +1,5 @@
-// PreToolUse hook. Prints a hint before T1 and a deny from T1 on; prints nothing when a call passes or anything fails.
+// PreToolUse hook. Prints a hint, and from T1 on a deny for a new PR in a wemotion repository that breaks the rules;
+// prints nothing when a call passes or anything fails.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ function git(dir, args) {
 }
 
 const remoteBranches = new Map();
+const remoteUrls = new Map();
 const ctx = {
   now: new Date().toISOString(),
   // null when git fails (no repo, timeout): the guard then stays quiet.
@@ -26,6 +28,10 @@ const ctx = {
     return remoteBranches.get(dir)?.has(branch) ?? null;
   },
   currentBranch: (dir) => git(dir, ['symbolic-ref', '--short', '-q', 'HEAD']) || null,
+  remoteUrl(dir) {
+    if (!remoteUrls.has(dir)) remoteUrls.set(dir, git(dir, ['remote', 'get-url', 'origin']) || null);
+    return remoteUrls.get(dir);
+  },
   readFile(path) {
     try {
       return statSync(path).size > MAX_BODY_BYTES ? null : readFileSync(path, 'utf8');
