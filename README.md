@@ -19,7 +19,9 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 
 ## Stichtage
 
-`CUTOFFS` in `lib/pr-rules.mjs` hat `T0`, `T1` und `T2`. Solange sie `null` sind, ist kein PR „neu“: Die Prüfung ist bis auf die Migrationsregel grün mit Hinweisen, und der Hook verweigert nie. Ab `T1` sind die Funde neuer PRs Fehler, und der Hook verweigert neue Branches und PRs mit falschem Namen oder Text. Ab `T2` zählt auch bei alten PRs nur noch „kein Entwurf“. Die Stichtage werden an T0 gesetzt und als neue Version veröffentlicht.
+`CUTOFFS` in `lib/pr-rules.mjs` hat `T0`, `T1` und `T2`. Solange sie `null` sind, ist kein PR „neu“: Die Prüfung ist bis auf die Migrationsregel grün mit Hinweisen, und der Hook verweigert nie. Ab `T1` sind die Funde neuer PRs Fehler, und der Hook verweigert neue Branches und PRs mit falschem Namen oder Text. Ab `T2` zählt auch bei alten PRs nur noch „kein Entwurf“, und Labels, freier Text und Kommentare zählen nicht mehr als Stopp.
+
+Seit Version 1.2.0 sind alle drei gesetzt, auf denselben Zeitpunkt: **02.11.2026 15:00 Berlin** (`2026-11-02T14:00:00Z`). Ein PR, der ab dann angelegt wird, muss die Regeln erfüllen. Ältere PRs fallen nie durch, ihre Funde bleiben Hinweise, bis auf die Migrationsregel.
 
 ## Prüfprogramm
 

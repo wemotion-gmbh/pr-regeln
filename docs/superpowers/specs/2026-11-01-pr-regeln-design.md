@@ -118,13 +118,15 @@ Vorschlag, so an Alex gegangen (Bitte 75ecd8cf), ergänzt um `revert` aus E328:
 
 ### 3.7 Neue und alte PRs, Stichtage (E301 B, E329 A)
 - **T0:** Alles ist gebaut, der Umstellungslauf (6.3) ist durch, und alle bekommen ihre Bitte (6.4).
-- **T1 = T0 + 2 Arbeitstage.** Die Prüfung sperrt neue PRs. Ein PR ist neu, wenn er am oder nach T1 angelegt wurde (GitHub `createdAt`, Bitbucket `created_on`). Für neue PRs gilt jeder Fehler aus 3.2–3.5: Die Prüfung ist rot, der Hook verweigert, die Merge-KI mergt nicht, und das Cockpit zeigt den PR als „wartet auf den Autor“.
-- **T2 = T0 + 7 Tage.** „Kein Entwurf = bereit“ gilt auch für alle offenen PRs. ✅ und der Kommentar „bereit“ zählen nicht mehr. Danach werden die drei alten Labels gelöscht.
+- **T1** (geplant war T0 + 2 Arbeitstage). Die Prüfung sperrt neue PRs. Ein PR ist neu, wenn er am oder nach T1 angelegt wurde (GitHub `createdAt`, Bitbucket `created_on`). Für neue PRs gilt jeder Fehler aus 3.2–3.5: Die Prüfung ist rot, der Hook verweigert, die Merge-KI mergt nicht, und das Cockpit zeigt den PR als „wartet auf den Autor“.
+- **T2** (geplant war T0 + 7 Tage). „Kein Entwurf = bereit“ gilt auch für alle offenen PRs. ✅ und der Kommentar „bereit“ zählen nicht mehr. Danach werden die drei alten Labels gelöscht.
 - **Alte PRs** (vor T1 angelegt) fallen nie durch. Die Prüfung zeigt ihre Funde nur als Hinweis, und das Cockpit zeigt sie als „umstellen“ mit der genauen Liste, was zu ändern ist (E301 B).
 - **Vor T0** läuft alles nur warnend, auch für neu angelegte PRs: Prüfung immer grün mit Hinweisen, der Hook warnt, verweigert aber nicht.
 - **Ausnahme:** Die Migrationsregel (3.6) gilt immer und für alle PRs.
 
 Die Stichtage stehen als Konstanten in der Regeldatei. Sie werden an T0 gesetzt und als neue Version veröffentlicht.
+
+**Gesetzt am 02.11.2026 (Marc, im Chat): T0 = T1 = T2 = 02.11.2026 15:00 Berlin (Version 1.2.0).** Eine Schonfrist braucht es nicht mehr, weil der Umstellungslauf alle offenen PRs schon umgestellt hat. Wer einen PR anlegt, schreibt ihn ab dann nach diesen Regeln.
 
 ## 4. Was gebaut wird
 
@@ -247,7 +249,7 @@ Ein Skript im Repo `pr-regeln`. Es läuft in Marcs Namen, zuerst als Probelauf, 
 Die Zahlen vom 01.11. sind dann alt. Das Skript erhebt alles neu.
 
 ### 6.4 Bitten und Stichtage (E305, E329)
-- **T0:** Jeder im Team bekommt eine Bitte mit den Regeln in fünf Zeilen und den Daten T1 und T2. Die Stichtage gehen als neue Version der Regeldatei raus. Plugin, pr-pruefen und Cockpit ziehen nach.
+- **T0:** Jeder im Team bekommt eine Bitte mit den Regeln in fünf Zeilen und den Daten T1 und T2 (seit 02.11.: dem einen Zeitpunkt, siehe 3.7). Die Stichtage gehen als neue Version der Regeldatei raus. Plugin, pr-pruefen und Cockpit ziehen nach.
 - **T1:** Die Prüfung sperrt neue PRs, der Hook verweigert.
 - **T2:** Die alte Bereit-Regel endet. Danach werden ✅, 🚧 und ⛔ von den PRs entfernt und aus den Repos gelöscht.
 - **KB und Memory** folgen den Merges (4.7).
