@@ -117,6 +117,15 @@ test('links to Bitbucket and GitHub PRs resolve; a Braucht line already there is
   assert.deepEqual(entry(me, [me, hub, api]).needs.map((n) => n.line), [`Braucht: example-api#${api.number}`]);
 });
 
+test('repo#n finds the open PR on the platform that has it, also when the name exists on both', () => {
+  const api = pr({ repo: 'example-api' });
+  const archived = pr({ forge: 'bitbucket', repo: 'example-api', number: 2600, labels: [] });
+  const me = pr({ forge: 'bitbucket', repo: 'example-hub', labels: [], body: `API: example-api#${api.number}, alt: example-api#2600.\n\n${SECTION}` });
+  const p = plan([me, api, archived], { bitbucketRepos: ['example-hub', 'example-api'] });
+  assert.deepEqual(p.prs.find((e) => e.key === `bitbucket:example-hub#${me.number}`).needs.map((n) => n.key),
+    [`github:example-api#${api.number}`, 'bitbucket:example-api#2600']);
+});
+
 test('a counterpart with a different branch name gets Paired-with on both sides; the same name gets none', () => {
   const hub = pr({ forge: 'bitbucket', repo: 'example-hub', head: 'feat/hub-side', labels: [] });
   const api = pr({ repo: 'example-api', head: 'feat/api-side', body: `Hub-Teil: ${hub.url}\n\n${SECTION}` });
@@ -263,15 +272,23 @@ test('apply leaves 🚧 on when its stop was judged no stop, and does nothing un
   assert.match(r.problems.join('\n'), /🚧/);
 });
 
-test('apply changes nothing when a PR moved since the plan', async () => {
-  const { p, e, states } = decided();
-  e.stops[0].decision = 'stop';
-  states[e.key].headSha = 'b'.repeat(40);
-  const client = fakeClient(states);
-  const r = await applyPlan(p, client);
-  assert.equal(r.ok, false);
-  assert.deepEqual(client.calls.map((c) => c[0]), ['fetch']);
-  assert.match(r.problems[0], /neuer Stand/);
+test('apply changes nothing when a PR moved since the plan: head, text, draft or labels', async () => {
+  const moves = {
+    head: (s) => { s.headSha = 'b'.repeat(40); },
+    text: (s) => { s.body = `${s.body}\nNachtrag`; },
+    draft: (s) => { s.draft = true; },
+    labels: (s) => { s.labels = [...s.labels, '✅ Bereit zum Review']; },
+  };
+  for (const [name, move] of Object.entries(moves)) {
+    const { p, e, states } = decided();
+    e.stops[0].decision = 'stop';
+    move(states[e.key]);
+    const client = fakeClient(states);
+    const r = await applyPlan(p, client);
+    assert.equal(r.ok, false, name);
+    assert.deepEqual(client.calls.map((c) => c[0]), ['fetch'], name);
+    assert.match(r.problems[0], /neuer Stand/, name);
+  }
 });
 
 test('apply refuses unknown decisions before it reads anything', async () => {

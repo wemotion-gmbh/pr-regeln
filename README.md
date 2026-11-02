@@ -52,7 +52,9 @@ node scripts/convert-open-prs.mjs apply --plan <datei.json> --yes
 ```
 
 - `plan` liest alle offenen PRs der GitHub-Organisation und des Bitbucket-Workspace und ändert nichts. Je PR schlägt es Stopp-Zeilen aus Text, Labels und Kommentaren vor, `Braucht:`- und `Paired-with:`-Zeilen, das Entfernen von 🚧, die Rückkehr zum Entwurf und veraltete PRs. Jeder Vorschlag hat ein Feld `decision`, das die Sitzung je PR füllt.
-- `apply` führt nur entschiedene Einträge aus, je PR in fester Reihenfolge: Kopfzeilen, dann 🚧 entfernen, dann Entwurf mit Kommentar. Hat sich auch nur ein PR mit Arbeit seit dem Plan bewegt (Head, Text oder Entwurf), ändert es nichts; dann neu planen. Ohne `--yes` endet es mit Exit 2.
+- `apply` führt nur entschiedene Einträge aus, je PR in fester Reihenfolge: Kopfzeilen, dann 🚧 entfernen, dann Entwurf mit Kommentar. Hat sich auch nur ein PR mit Arbeit seit dem Plan bewegt (Head, Text, Entwurf oder Labels), ändert es nichts; dann neu planen. Ohne `--yes` endet es mit Exit 2.
+- Ein `repo#n` im Text zählt für den PR, der auf einer der beiden Plattformen offen ist; zuerst auf der, zu der der Repo-Name gehört.
+- Der Plan enthält ganze PR-Texte und Kommentare, auch aus privaten Repos. Plan-Dateien deshalb außerhalb dieses Klons ablegen, nie hier einchecken.
 - Die PRs des Lauf-Inhabers (`--owner-bitbucket`, `--owner-github`) gehen nicht auf Entwurf.
 
 ## Versionen
