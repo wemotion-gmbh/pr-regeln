@@ -98,6 +98,12 @@ export function normalizeBody(body: string, forge: Forge): string;
 export function parseHeadBlock(body: string): HeadBlock;
 export function stopLines(body: string): string[];
 export function findStopPhrases(body: string, headEnd?: number): StopPhrase[];
+export function allStopPhrases(
+  body: string,
+  headEnd?: number,
+  opts?: { keepDependencySection?: boolean; extra?: { kind: string; patterns: RegExp[] }[] },
+): { kind: string; quote: string }[];
+export function firstContentLine(lines: string[]): number;
 export function splitUnifiedDiff(diff: string): { path: string; patch: string }[];
 export function deletesData(files: PrFile[]): MigrationResult;
 export function checkBody(body: string, forge: Forge): { rules: Finding[]; warnings: Finding[]; headBlock: HeadBlock };

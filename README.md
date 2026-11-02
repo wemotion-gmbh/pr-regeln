@@ -7,6 +7,7 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 - `lib/pr-rules.mjs` – die Regeldatei, ESM ohne Abhängigkeiten, Node ≥ 22. Sie nutzen das Prüfprogramm, der Hook, der Skill `pr-anlegen` und das Team-Cockpit. Typen in `lib/pr-rules.d.ts`.
 - `cli.mjs` – das Prüfprogramm.
 - Das Claude-Code-Plugin `pr-regeln`: das Repo ist zugleich das Plugin-Verzeichnis (`.claude-plugin/plugin.json`, `hooks/`, `skills/`, `scripts/`).
+- `scripts/convert-open-prs.mjs` – der Umstellungslauf für die offenen PRs (Abschnitt 6.3 der Regeln), siehe unten.
 
 ## Die Regeln in Kürze
 
@@ -42,6 +43,19 @@ Eingetragen im Marketplace [claude-plugins](https://github.com/wemotion-gmbh/cla
 
 - **Hook** (PreToolUse auf `Bash|PowerShell` und auf die MCP-Werkzeuge zum Anlegen und Ändern von PRs). Er prüft neue Branches, den Push neuer Branches, `gh pr create` und `gh pr edit`, PR-Aufrufe direkt über die API von GitHub und Bitbucket und die MCP-Werkzeuge. Text in Heredocs, Here-Strings, `echo` und `grep` lässt er aus; was er nicht sicher lesen kann, lässt er durch. Vor `T1` gibt er bei einem Fund nur einen Hinweis, ab `T1` verweigert er. „Erlauben“ gibt er nie aus, und fällt er aus, läuft der Befehl weiter. Treffer zählt er in `${CLAUDE_PLUGIN_DATA}/hits.json`.
 - **Skill `pr-anlegen`** mit dem Skript `scripts/create-pr.mjs` (`create`, `update`, `ready`). Er schreibt die Kopfzeilen, setzt das Art-Label, erkennt löschende Migrationen, prüft den PR und legt bei Rot nichts an. Aufruf und Optionen stehen in [skills/pr-anlegen/SKILL.md](skills/pr-anlegen/SKILL.md).
+
+## Umstellungslauf
+
+```
+node scripts/convert-open-prs.mjs plan --out <datei.json> --owner-bitbucket <Anzeigename> [--owner-github <login>] [--md <datei.md>]
+node scripts/convert-open-prs.mjs apply --plan <datei.json> --yes
+```
+
+- `plan` liest alle offenen PRs der GitHub-Organisation und des Bitbucket-Workspace und ändert nichts. Je PR schlägt es Stopp-Zeilen aus Text, Labels und Kommentaren vor, `Braucht:`- und `Paired-with:`-Zeilen, das Entfernen von 🚧, die Rückkehr zum Entwurf und veraltete PRs. Jeder Vorschlag hat ein Feld `decision`, das die Sitzung je PR füllt.
+- `apply` führt nur entschiedene Einträge aus, je PR in fester Reihenfolge: Kopfzeilen, dann 🚧 entfernen, dann Entwurf mit Kommentar. Hat sich auch nur ein PR mit Arbeit seit dem Plan bewegt (Head, Text, Entwurf oder Labels), ändert es nichts; dann neu planen. Ohne `--yes` endet es mit Exit 2.
+- Ein `repo#n` im Text zählt für den PR, der auf einer der beiden Plattformen offen ist; zuerst auf der, zu der der Repo-Name gehört.
+- Der Plan enthält ganze PR-Texte und Kommentare, auch aus privaten Repos. Plan-Dateien deshalb außerhalb dieses Klons ablegen, nie hier einchecken.
+- Die PRs des Lauf-Inhabers (`--owner-bitbucket`, `--owner-github`) gehen nicht auf Entwurf.
 
 ## Versionen
 
