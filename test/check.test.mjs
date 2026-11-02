@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkPr, isNewPr, MIGRATION_LABEL_OK } from '../lib/pr-rules.mjs';
+import { checkPr, CUTOFFS, isNewPr, MIGRATION_LABEL_OK } from '../lib/pr-rules.mjs';
 
 const GOOD_BODY = '## Abhängigkeiten und Reihenfolge\nKeine.\n\n## Worum es geht\nText.';
 const base = {
@@ -8,13 +8,20 @@ const base = {
   labels: [], author: { login: 'someone', type: 'User' }, createdAt: '2026-01-10T10:00:00Z', files: [],
 };
 const past = { T0: '2026-01-01T00:00:00Z', T1: '2026-01-05T00:00:00Z', T2: '2026-01-08T00:00:00Z' };
+const unset = { T0: null, T1: null, T2: null };
 const codes = (list) => list.map((f) => f.code);
 const DELETING = [{ path: 'database/migrations/x.php', patch: "@@ -1 +1,2 @@\n+        $table->dropColumn('a');" }];
 
 test('isNewPr needs a T1', () => {
-  assert.equal(isNewPr('2030-01-01T00:00:00Z'), false);
+  assert.equal(isNewPr('2030-01-01T00:00:00Z', unset), false);
   assert.equal(isNewPr('2026-01-05T00:00:00Z', past), true);
   assert.equal(isNewPr('2026-01-04T23:59:59Z', past), false);
+});
+
+test('the cutoffs are set, all at 02.11.2026 15:00 Berlin', () => {
+  assert.deepEqual(CUTOFFS, { T0: '2026-11-02T14:00:00Z', T1: '2026-11-02T14:00:00Z', T2: '2026-11-02T14:00:00Z' });
+  assert.equal(isNewPr('2026-11-02T13:59:59Z'), false);
+  assert.equal(isNewPr('2026-11-02T14:00:00Z'), true);
 });
 
 test('a clean PR has no findings', () => {
@@ -23,7 +30,7 @@ test('a clean PR has no findings', () => {
 });
 
 test('without cutoffs every finding is a warning', () => {
-  const r = checkPr({ ...base, head: 'feature/x', body: 'Merge-Stopp: keiner\n\nBitte nicht mergen.' });
+  const r = checkPr({ ...base, head: 'feature/x', body: 'Merge-Stopp: keiner\n\nBitte nicht mergen.' }, { cutoffs: unset });
   assert.deepEqual(r.errors, []);
   assert.equal(r.isNew, false);
   assert.deepEqual(codes(r.warnings).sort(), ['K2', 'K7', 'W1']);
