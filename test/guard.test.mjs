@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { splitCommands } from '../lib/shell.mjs';
-import { evaluate } from '../lib/guard.mjs';
+import { evaluate, hookMessage } from '../lib/guard.mjs';
 
 const past = { T0: '2026-01-01T00:00:00Z', T1: '2026-01-05T00:00:00Z', T2: '2026-01-08T00:00:00Z' };
 const SECTION = '## Abhängigkeiten und Reihenfolge\nKeine.';
@@ -233,6 +233,46 @@ test('outside wemotion the hook stays quiet', () => {
   const mcp = { owner: 'someone', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' };
   assert.deepEqual(evaluate('mcp__github__create_pull_request', mcp, ctx({ cutoffs: past })).findings, []);
   assert.deepEqual(evaluate('mcp__github__update_pull_request', { owner: 'someone', repo: 'r', pullNumber: 3, body: 'Braucht: nichts' }, ctx()).findings, []);
+});
+
+test('gh api with the {owner} placeholder takes the owner from the origin remote', () => {
+  for (const c of ['gh api -X POST repos/{owner}/{repo}/pulls --input pr.json', 'gh api -X POST repos/:owner/:repo/pulls --input pr.json']) {
+    const ours = run(c, { ...OURS, cutoffs: past });
+    assert.deepEqual(codes(ours), ['P1'], c);
+    assert.equal(ours.deny, true, c);
+    assert.deepEqual(run(c, { ...FOREIGN, cutoffs: past }).findings, [], c);
+    const unknown = run(c, { cutoffs: past });
+    assert.deepEqual(codes(unknown), ['P1'], c);
+    assert.equal(unknown.deny, false, c);
+  }
+});
+
+test('the remote forms of the team count as wemotion, an unknown host as unknown', () => {
+  const bad = 'gh pr create --head feat/x --base main --title t --body "Merge-Stopp: keiner"';
+  for (const url of ['git@bitbucket.org:wemotion-bucket/x.git', 'https://user@bitbucket.org/wemotion-bucket/x.git',
+    'git@github.com:wemotion-gmbh/x.git', 'ssh://git@ssh.github.com:443/wemotion-gmbh/x.git']) {
+    assert.equal(run(bad, { cutoffs: past, remoteUrl: () => url }).deny, true, url);
+  }
+  const alias = run(bad, { cutoffs: past, remoteUrl: () => 'git@github-work:wemotion-gmbh/x.git' });
+  assert.ok(codes(alias).includes('K2'));
+  assert.equal(alias.deny, false);
+});
+
+test('an MCP call names the Bitbucket workspace', () => {
+  const input = { workspace: 'wemotion-bucket', repo: 'r', title: 't', body: 'Braucht: nichts', head: 'feature/x', base: 'main' };
+  assert.equal(evaluate('mcp__bitbucket__create_pull_request', input, ctx({ cutoffs: past })).deny, true);
+});
+
+test('the remote is looked up only when there is a finding', () => {
+  const seen = [];
+  run('git status; git diff; git switch -c feat/x', { remoteUrl: (dir) => { seen.push(dir); return null; } });
+  assert.deepEqual(seen, []);
+  run('git checkout -b feature/x', { remoteUrl: (dir) => { seen.push(dir); return null; } });
+  assert.deepEqual(seen, ['/repo']);
+});
+
+test('a hint does not announce a block', () => {
+  assert.doesNotMatch(hookMessage({ findings: [{ code: 'K7', message: 'm' }], deny: false }), /noch keine Sperre/);
 });
 
 test('with the published cutoffs a new PR is denied from 02.11.2026 15:00 Berlin on', () => {

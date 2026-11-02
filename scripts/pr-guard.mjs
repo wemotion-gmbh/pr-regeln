@@ -16,6 +16,7 @@ function git(dir, args) {
 }
 
 const remoteBranches = new Map();
+const remoteUrls = new Map();
 const ctx = {
   now: new Date().toISOString(),
   // null when git fails (no repo, timeout): the guard then stays quiet.
@@ -27,7 +28,10 @@ const ctx = {
     return remoteBranches.get(dir)?.has(branch) ?? null;
   },
   currentBranch: (dir) => git(dir, ['symbolic-ref', '--short', '-q', 'HEAD']) || null,
-  remoteUrl: (dir) => git(dir, ['remote', 'get-url', 'origin']) || null,
+  remoteUrl(dir) {
+    if (!remoteUrls.has(dir)) remoteUrls.set(dir, git(dir, ['remote', 'get-url', 'origin']) || null);
+    return remoteUrls.get(dir);
+  },
   readFile(path) {
     try {
       return statSync(path).size > MAX_BODY_BYTES ? null : readFileSync(path, 'utf8');
