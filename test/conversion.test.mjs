@@ -197,6 +197,14 @@ test('stopLine names the source', () => {
   assert.equal(stopLine(' y \n z', 'text'), 'Merge-Stopp: y z (übernommen aus Text)');
 });
 
+test('stopLine leaves out the heading or list marker a quoted line starts with', () => {
+  assert.equal(stopLine('## ⚠️ Nicht mergen ohne Entscheid', 'text'), 'Merge-Stopp: ⚠️ Nicht mergen ohne Entscheid (übernommen aus Text)');
+  assert.equal(stopLine('- Erst nach dem Beta-Lauf.', 'text'), 'Merge-Stopp: Erst nach dem Beta-Lauf. (übernommen aus Text)');
+  assert.equal(stopLine('> * Bitte nicht mergen.', 'comment'), 'Merge-Stopp: Bitte nicht mergen. (übernommen aus Kommentar)');
+  assert.equal(stopLine('#374 zuerst.', 'text'), 'Merge-Stopp: #374 zuerst. (übernommen aus Text)');
+  assert.equal(stopLine('-', 'text'), 'Merge-Stopp: (ohne Grund) (übernommen aus Text)');
+});
+
 test('insertHeadLines puts new lines on top and leaves the rest of the text as it was', () => {
   assert.equal(insertHeadLines('Text\nmore\n', 'github', ['Merge-Stopp: a']), 'Merge-Stopp: a\n\nText\nmore\n');
   assert.equal(insertHeadLines('Braucht: x#1\n\nText', 'github', ['Merge-Stopp: a']), 'Braucht: x#1\nMerge-Stopp: a\n\nText');
