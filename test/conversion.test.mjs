@@ -48,7 +48,7 @@ test('"erst nach" is a candidate only near merging, live or beta', () => {
   const quotes = (body) => entry(pr({ body: `${body}\n\n${SECTION}` })).stops.map((s) => s.quote);
   assert.deepEqual(quotes('Anlegen geht erst nach dem Kürzen.'), []);
   assert.deepEqual(quotes('Erst nach Validierung auf Beta.'), ['Erst nach Validierung auf Beta.']);
-  assert.deepEqual(quotes('Gemergt wird erst nach Rückfrage.'), ['Gemergt wird erst nach Rückfrage.']);
+  assert.deepEqual(quotes('Gemergt wird erst nach dem Gespräch.'), ['Gemergt wird erst nach dem Gespräch.']);
 });
 
 test('a stop sentence in the text becomes a candidate with its line, and nothing is decided', () => {
@@ -198,10 +198,10 @@ test('stopLine names the source', () => {
 });
 
 test('stopLine leaves out the heading or list marker a quoted line starts with', () => {
-  assert.equal(stopLine('## ⚠️ Nicht mergen ohne Entscheid', 'text'), 'Merge-Stopp: ⚠️ Nicht mergen ohne Entscheid (übernommen aus Text)');
+  assert.equal(stopLine('## ⚠️ Vor dem Release nicht mergen', 'text'), 'Merge-Stopp: ⚠️ Vor dem Release nicht mergen (übernommen aus Text)');
   assert.equal(stopLine('- Erst nach dem Beta-Lauf.', 'text'), 'Merge-Stopp: Erst nach dem Beta-Lauf. (übernommen aus Text)');
   assert.equal(stopLine('> * Bitte nicht mergen.', 'comment'), 'Merge-Stopp: Bitte nicht mergen. (übernommen aus Kommentar)');
-  assert.equal(stopLine('#374 zuerst.', 'text'), 'Merge-Stopp: #374 zuerst. (übernommen aus Text)');
+  assert.equal(stopLine('#12 zuerst.', 'text'), 'Merge-Stopp: #12 zuerst. (übernommen aus Text)');
   assert.equal(stopLine('-', 'text'), 'Merge-Stopp: (ohne Grund) (übernommen aus Text)');
 });
 
