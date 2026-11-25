@@ -39,6 +39,8 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
      (`fusion-api-v3#412`), eine Option je PR.
    - `--paired-with <repo> <url>`: Gegenstück in einem anderen Repo, **nur** wenn die Branch-Namen verschieden sind.
    - `--after "<Schritt>"`: was nach dem Merge zu tun ist, nur zur Information.
+   - `--design "<Karten>"`: die Design-Karten, auf denen der PR aufbaut. Pflicht für canou-hub-PRs, die UI-Dateien
+     ändern (Abschnitt „Design im Hub“).
 5. **Aufrufen:**
 
    ```
@@ -66,6 +68,19 @@ nicht. PRs nie mit `gh pr create`, `gh api` oder einem eigenen REST-Aufruf anleg
 - GitHub: Das Skript setzt das Label `🔑 Marcs Ja fehlt`. `🔑 Marcs Ja` setzt die KI nur nach Marcs Ja im Cockpit.
 - Bitbucket: Das Skript schreibt `Merge-Stopp: Marcs Ja fehlt (Migration löscht Daten)`. Die Merge-KI entfernt die
   Zeile nach Marcs Ja und hält das Ja als Kommentar mit dem Head fest.
+
+## Design im Hub (Marc, E2170 A)
+
+- Ändert ein PR in `wemotion-gmbh/canou-hub` UI-Dateien (`app/`, `components/`, `config/`, `lib/**/config*`, `styles/`;
+  ohne Tests und `app/api/`), nennt er oben seine Karten. Vorher läuft der Hub-Skill `hub-design-lesen`.
+- Formen: `--design "HM12, HM24"` · `--design "HM12, neu – <Kurzbeschreibung>"` oder `--design "neu – <Kurzbeschreibung>"`
+  (neues Muster) · `--design "keine UI-Änderung"` (pr-pruefen prüft die Angabe).
+- `neu`: Das Skript setzt `🎨 Marcs Design-Ja fehlt`, die Prüfung bleibt rot. Den Entwurf bringt `redesign-entwurf` zu
+  Marc, die Frage geht ins Cockpit. Erst nach seinem Ja: `design-ja --repo-dir <repo> --number <nr> --cockpit E<nr>`.
+  Das schreibt den Vermerk mit dem Head und setzt `🎨 Marcs Design-Ja`. Ändern sich danach UI-Dateien, gilt das Ja nicht
+  mehr: Marc erneut fragen, dann `design-ja` erneut.
+- `update` behält die Zeile, wenn weder `--design` noch die Textdatei eine nennt. Release-, Promotions- und Revert-PRs
+  brauchen keine.
 
 ## Ändern und fertig melden
 

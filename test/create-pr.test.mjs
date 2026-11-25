@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DESIGN_CUTOFFS } from '../lib/pr-rules.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/create-pr.mjs', import.meta.url));
 // Fetching from the GitHub origin fails at once, so the script works on the refs the test sets.
@@ -110,4 +111,56 @@ test('a fixed head is read as origin/<head>, the branch the PR shows', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Migrationen: löschen Daten/);
   assert.match(r.stdout, /🔑 Marcs Ja fehlt/);
+});
+
+// A canou-hub checkout with one UI file changed against origin/beta.
+function hubRepo() {
+  const dir = repo('feat/kalender');
+  git(dir, 'remote', 'set-url', 'origin', 'https://github.com/wemotion-gmbh/canou-hub.git');
+  commit(dir, 'README.md', 'x');
+  git(dir, 'update-ref', 'refs/remotes/origin/beta', 'HEAD');
+  commit(dir, 'components/modules/calendar/calendar-bar.tsx', 'export {}\n');
+  return dir;
+}
+const hubPr = (dir, ...extra) => spawnSync(process.execPath, [SCRIPT, 'create', '--repo-dir', dir, '--base', 'beta', '--title', 't',
+  '--body-file', join(dir, 'body.md'), '--ready', '--dry-run', ...extra], { encoding: 'utf8', env: ENV });
+const designEnforcedNow = Date.now() >= Date.parse(DESIGN_CUTOFFS.T1);
+
+test('a hub UI PR without --design names D1 and the skill', () => {
+  const r = hubPr(hubRepo());
+  assert.equal(r.status, designEnforcedNow ? 1 : 0, r.stderr);
+  assert.match(r.stdout, /UI-Dateien: 1/);
+  assert.match(r.stdout, /D1 .*calendar-bar\.tsx/);
+  assert.match(r.stdout, /hub-design-lesen/);
+});
+
+test('--design writes the line at the end of the head block', () => {
+  const r = hubPr(hubRepo(), '--needs', 'pr-regeln#7', '--design', 'HM12, HM24');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /--- Text ---\nBraucht: pr-regeln#7\nDesign: HM12, HM24\n\n## Abhängigkeiten/);
+  assert.match(r.stdout, /Keine Funde\./);
+});
+
+test('--design "neu – …" sets the missing label and is no blocker', () => {
+  const r = hubPr(hubRepo(), '--design=neu – Kalenderleiste');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Labels: 🎨 Marcs Design-Ja fehlt/);
+  assert.match(r.stdout, /D3 /);
+});
+
+test('--design with a wrong form blocks once the rule bites', () => {
+  const r = hubPr(hubRepo(), '--design', 'HM12 HM24');
+  assert.equal(r.status, designEnforcedNow ? 1 : 0, r.stderr);
+  assert.match(r.stdout, /D2 /);
+});
+
+test('design-ja needs a cockpit number', () => {
+  for (const cockpit of ['2170', 'e2170', 'E21x']) {
+    const r = spawnSync(process.execPath, [SCRIPT, 'design-ja', '--repo-dir', hubRepo(), '--number', '1', '--cockpit', cockpit], { encoding: 'utf8', env: ENV });
+    assert.equal(r.status, 2, cockpit);
+    assert.match(r.stderr, /E2170/, cockpit);
+  }
+  const r = spawnSync(process.execPath, [SCRIPT, 'design-ja', '--repo-dir', hubRepo(), '--number', '1'], { encoding: 'utf8', env: ENV });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /--cockpit fehlt/);
 });

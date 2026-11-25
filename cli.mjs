@@ -1,12 +1,34 @@
 #!/usr/bin/env node
-// pr-regeln check <PR-URL> [--mark-migration] [--json]
+// pr-regeln check <PR-URL> [--mark-migration] [--mark-design] [--json]
 // Exit 0: no errors, 1: errors, 2: usage or access problem.
-import { checkPr, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK } from './lib/pr-rules.mjs';
+import { checkPr, DESIGN_LABEL_MISSING, DESIGN_LABEL_OK, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK } from './lib/pr-rules.mjs';
 import { parsePrUrl, fetchPr, addGithubLabel, removeGithubLabel } from './lib/forges.mjs';
 import { formatResult } from './lib/format.mjs';
 
-const USAGE = 'Aufruf: pr-regeln check <PR-URL> [--mark-migration] [--json]';
-const FLAGS = ['--mark-migration', '--json'];
+const USAGE = 'Aufruf: pr-regeln check <PR-URL> [--mark-migration] [--mark-design] [--json]';
+const FLAGS = ['--mark-migration', '--mark-design', '--json'];
+
+// GitHub only, never the yes label: "Design: neu" gets the missing label; a yes that no longer counts (D4) is taken
+// off again; the missing label goes once the yes is there or the PR has no new pattern.
+async function markDesign(ref, pr, result) {
+  if (pr.forge !== 'github' || result.skipped || !result.design || result.design.exempt) return [];
+  const has = (l) => pr.labels.includes(l);
+  const done = [];
+  const voided = [...result.errors, ...result.warnings].some((f) => f.code === 'D4');
+  if (voided && has(DESIGN_LABEL_OK)) {
+    await removeGithubLabel(ref, DESIGN_LABEL_OK);
+    done.push(`Label „${DESIGN_LABEL_OK}“ entfernt: Das Ja gilt nicht mehr.`);
+  }
+  const ok = has(DESIGN_LABEL_OK) && !voided;
+  if (result.design.isNew && !ok && !has(DESIGN_LABEL_MISSING)) {
+    await addGithubLabel(ref, DESIGN_LABEL_MISSING);
+    done.push(`Label „${DESIGN_LABEL_MISSING}“ gesetzt.`);
+  } else if (has(DESIGN_LABEL_MISSING) && (ok || !result.design.isNew)) {
+    await removeGithubLabel(ref, DESIGN_LABEL_MISSING);
+    done.push(`Label „${DESIGN_LABEL_MISSING}“ entfernt.`);
+  }
+  return done;
+}
 
 // GitHub only: sets the missing label, never the yes label; drops the missing label once the yes label is there.
 async function markMigration(ref, pr, result) {
@@ -50,15 +72,15 @@ async function main(argv) {
   }
   const result = checkPr(pr);
 
-  let marked = null;
+  const done = [];
   let markError = null;
-  if (flags.includes('--mark-migration')) {
-    try {
-      marked = await markMigration(ref, pr, result);
-    } catch (e) {
-      markError = `Label nicht geändert: ${e.message}`;
-    }
+  try {
+    if (flags.includes('--mark-migration')) done.push(await markMigration(ref, pr, result));
+    if (flags.includes('--mark-design')) done.push(...await markDesign(ref, pr, result));
+  } catch (e) {
+    markError = `Label nicht geändert: ${e.message}`;
   }
+  const marked = done.filter(Boolean).join('\n') || null;
 
   if (flags.includes('--json')) {
     const { forge, owner, repo, number, url, title, head, base, headSha, draft, createdAt } = pr;

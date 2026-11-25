@@ -1,5 +1,5 @@
 export type Forge = 'github' | 'bitbucket';
-export type FindingCode = 'K1' | 'K2' | 'K3' | 'K4' | 'K5' | 'K6' | 'K7' | 'K8' | 'K9' | 'M1' | 'W1' | 'W2' | 'W3';
+export type FindingCode = 'K1' | 'K2' | 'K3' | 'K4' | 'K5' | 'K6' | 'K7' | 'K8' | 'K9' | 'M1' | 'D1' | 'D2' | 'D3' | 'D4' | 'D5' | 'W1' | 'W2' | 'W3';
 
 export interface Finding {
   code: FindingCode;
@@ -23,8 +23,43 @@ export interface PrFile {
   patch?: string | null;
 }
 
+export interface DesignApproval {
+  cockpit: string;
+  sha: string;
+  /** UI files changed since `sha`; null when unknown, which voids the yes. */
+  changedUi: string[] | null;
+}
+
+export interface DesignRule {
+  skill: string;
+  ui: readonly string[];
+  notUi: readonly string[];
+}
+
+export interface DesignValue {
+  ok: boolean;
+  reason?: string;
+  cards: string[];
+  isNew: boolean;
+  none: boolean;
+  newText: string;
+}
+
+export interface DesignResult {
+  exempt: 'promotion' | 'release' | 'revert' | null;
+  /** null when the files were not known. */
+  uiFiles: string[] | null;
+  value: string | null;
+  cards: string[];
+  isNew: boolean;
+  none: boolean;
+  approval?: DesignApproval | null;
+  enforced: boolean;
+}
+
 export interface PrInput {
   forge: Forge;
+  owner?: string;
   repo: string;
   head: string;
   base: string;
@@ -35,6 +70,8 @@ export interface PrInput {
   author?: Author | null;
   createdAt?: string;
   files?: PrFile[];
+  /** Read by forges.mjs when the yes label is set: null without a note, undefined when not read. */
+  designApproval?: DesignApproval | null;
 }
 
 export interface MigrationResult {
@@ -48,6 +85,8 @@ export interface CheckResult {
   isNew: boolean;
   migration?: MigrationResult | null;
   skipped?: 'bot';
+  /** Only for a repo with the design rule. */
+  design?: DesignResult;
 }
 
 export interface BranchCheck {
@@ -58,7 +97,7 @@ export interface BranchCheck {
 }
 
 export interface HeadEntry {
-  key: 'Paired-with' | 'Braucht' | 'Merge-Stopp' | 'Nach dem Merge';
+  key: 'Paired-with' | 'Braucht' | 'Merge-Stopp' | 'Nach dem Merge' | 'Design';
   value: string;
   line: number;
 }
@@ -70,6 +109,7 @@ export interface HeadBlock {
   stops: string[];
   pairedWith: { repo: string; url: string }[];
   after: string[];
+  design: string[];
   findings: Finding[];
 }
 
@@ -90,6 +130,17 @@ export const MIGRATION_LABEL_MISSING: string;
 export const MIGRATION_LABEL_OK: string;
 export const HEAD_KEYS: readonly string[];
 export const CUTOFFS: Readonly<Cutoffs>;
+export const DESIGN_LABEL_MISSING: string;
+export const DESIGN_LABEL_OK: string;
+export const DESIGN_RULES: Readonly<Record<string, DesignRule>>;
+export const DESIGN_CUTOFFS: Readonly<{ T1: string | null; T2: string | null }>;
+export const DESIGN_APPROVAL: RegExp;
+export function designApprovalNote(cockpit: string, sha: string): string;
+export function globToRegExp(glob: string): RegExp;
+export function designRuleFor(ref: { forge?: Forge; owner?: string; repo?: string }): DesignRule | null;
+export function isDesignUiPath(path: string, rule: DesignRule | null): boolean;
+export function parseDesignValue(value: string): DesignValue;
+export function designEnforced(createdAt: string | null | undefined, now: string | null | undefined, cutoffs?: { T1: string | null; T2: string | null }): boolean;
 
 export function isBot(author: Author | null | undefined): boolean;
 export function checkBranchName(head: string): BranchCheck;
@@ -108,4 +159,4 @@ export function splitUnifiedDiff(diff: string): { path: string; patch: string }[
 export function deletesData(files: PrFile[]): MigrationResult;
 export function checkBody(body: string, forge: Forge): { rules: Finding[]; warnings: Finding[]; headBlock: HeadBlock };
 export function isNewPr(createdAt: string | null | undefined, cutoffs?: Cutoffs): boolean;
-export function checkPr(pr: PrInput, opts?: { cutoffs?: Cutoffs }): CheckResult;
+export function checkPr(pr: PrInput, opts?: { cutoffs?: Cutoffs; designCutoffs?: { T1: string | null; T2: string | null }; now?: string }): CheckResult;

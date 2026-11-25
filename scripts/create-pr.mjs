@@ -6,27 +6,33 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  FIXED_BRANCHES, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK, checkBranchName, checkPr, deletesData, splitUnifiedDiff, typeLabelFor,
+  DESIGN_LABEL_MISSING, DESIGN_LABEL_OK, FIXED_BRANCHES, MIGRATION_LABEL_MISSING, MIGRATION_LABEL_OK, checkBranchName, checkPr, deletesData,
+  designApprovalNote, designRuleFor, parseDesignValue, splitUnifiedDiff, typeLabelFor,
 } from '../lib/pr-rules.mjs';
-import { addGithubLabel, bitbucketAuth, bitbucketPr, bitbucketPrUrl, bitbucketSend, exec, fetchPr, parseRemote } from '../lib/forges.mjs';
-import { FROM_TEXT, buildBody, carriedStops } from '../lib/body.mjs';
+import {
+  addGithubLabel, bitbucketAuth, bitbucketPr, bitbucketPrUrl, bitbucketSend, exec, fetchPr, parseRemote, removeGithubLabel,
+} from '../lib/forges.mjs';
+import { FROM_TEXT, buildBody, carriedStops, designLineOf } from '../lib/body.mjs';
 import { formatFindings } from '../lib/format.mjs';
 
 const USAGE = `Aufruf:
   create-pr.mjs create --repo-dir <pfad> --base <branch> --title <titel> --body-file <datei> (--ready|--draft)
       [--head <branch>] [--rename-to <art>/<thema>] [--needs <repo>#<nr>]... [--stop "<grund>"]...
-      [--paired-with <repo> <url>]... [--after "<schritt>"]... [--dry-run]
+      [--paired-with <repo> <url>]... [--after "<schritt>"]... [--design "<karten>"] [--dry-run]
   create-pr.mjs update --repo-dir <pfad> --number <nr> --body-file <datei> [--title <titel>] [--ready|--draft]
-      [--needs ...] [--stop ...] [--remove-stop "<grund>"]... [--paired-with ...] [--after ...] [--dry-run]
+      [--needs ...] [--stop ...] [--remove-stop "<grund>"]... [--paired-with ...] [--after ...] [--design ...] [--dry-run]
   create-pr.mjs ready --repo-dir <pfad> --number <nr> [--dry-run]
-Optionen mit Wert gehen auch als --name=wert, ein leerer Wert als --name=.`;
+  create-pr.mjs design-ja --repo-dir <pfad> --number <nr> --cockpit E<nr> [--dry-run]
+Optionen mit Wert gehen auch als --name=wert, ein leerer Wert als --name=.
+--design: „HM12, HM24“, „HM12, neu – <Kurzbeschreibung>“, „neu – <Kurzbeschreibung>“ oder „keine UI-Änderung“.
+design-ja nur nach Marcs Ja im Cockpit: schreibt den Vermerk mit dem Head und setzt „${DESIGN_LABEL_OK}“.`;
 
 const BITBUCKET_MIGRATION_STOP = 'Marcs Ja fehlt (Migration löscht Daten)';
 const CLOUD_BRANCH = /^(claude\/|ccr-)/;
 // A branch name, never a ref expression: HEAD, refs/..., a refspec (":", "+") or a revision ("~", "^", "@{") would
 // make the push go elsewhere than the checked name.
 const PLAIN_BRANCH = /^(?!HEAD$|refs\/|-)(?!.*\.\.)[\w.\/-]+$/;
-const SINGLE = new Set(['--repo-dir', '--base', '--title', '--body-file', '--head', '--rename-to', '--number']);
+const SINGLE = new Set(['--repo-dir', '--base', '--title', '--body-file', '--head', '--rename-to', '--number', '--design', '--cockpit']);
 const MULTI = { '--needs': 'needs', '--stop': 'stops', '--remove-stop': 'removeStops', '--after': 'after' };
 const FLAGS = new Set(['--ready', '--draft', '--dry-run']);
 
@@ -52,9 +58,10 @@ function parseArgs(argv) {
     else if (FLAGS.has(a)) o.flags.add(a);
     else throw new UsageError(`Unbekannte Angabe: ${a}`);
   }
-  const required = { create: ['base', 'title', 'body-file'], update: ['number', 'body-file'], ready: ['number'] }[command];
+  const required = { create: ['base', 'title', 'body-file'], update: ['number', 'body-file'], ready: ['number'], 'design-ja': ['number', 'cockpit'] }[command];
   if (!required) throw new UsageError(`Unbekannter Befehl: ${command ?? '(keiner)'}`);
   for (const r of required) if (!o[r]) throw new UsageError(`--${r} fehlt.`);
+  if (o.cockpit !== undefined && !/^E\d+$/.test(o.cockpit)) throw new UsageError('--cockpit nimmt die Nummer der Entscheidung im Cockpit, z. B. E2170.');
   const both = o.flags.has('--ready') && o.flags.has('--draft');
   if (both || (command === 'create' && !o.flags.has('--ready') && !o.flags.has('--draft'))) {
     throw new UsageError('Genau eins von --ready (fertig) oder --draft (Entwurf) angeben.');
@@ -81,27 +88,47 @@ function repoOf(dir) {
   return remote;
 }
 
-// Only migrations matter for the data-deleting check, at any depth (fusion keeps them in a subfolder); null when the
-// diff cannot be read. A fixed head is never pushed, so the PR shows origin/<head>, not the local branch.
-function migrationFiles(dir, base, head) {
+// The changed files against the base: migrations with their patch for the data-deleting check, at any depth (fusion
+// keeps them in a subfolder), every other file by name for the design rule; null when the diff cannot be read.
+// A fixed head is never pushed, so the PR shows origin/<head>, not the local branch.
+function changedFiles(dir, base, head) {
   const fixed = FIXED_BRANCHES.includes(head);
   tryGit(dir, ['fetch', '-q', 'origin', base, ...(fixed ? [head] : [])]);
-  const tip = fixed ? `origin/${head}` : head;
-  const diff = tryGit(dir, ['diff', '--unified=3', `origin/${base}...${tip}`, '--', ':(glob)**/database/migrations/**'], { raw: true });
-  return diff === null ? null : splitUnifiedDiff(diff);
+  const range = `origin/${base}...${fixed ? `origin/${head}` : head}`;
+  const diff = tryGit(dir, ['diff', '--unified=3', range, '--', ':(glob)**/database/migrations/**'], { raw: true });
+  const names = tryGit(dir, ['-c', 'core.quotePath=false', 'diff', '--name-only', '-z', range], { raw: true });
+  if (diff === null || names === null) return null;
+  const migrations = splitUnifiedDiff(diff);
+  const seen = new Set(migrations.map((f) => f.path));
+  return [...migrations, ...names.split('\0').filter((p) => p && !seen.has(p)).map((path) => ({ path }))];
+}
+
+// On a repo with the design rule, "Design: neu" carries the missing label until Marc's yes; without "neu" it goes.
+function designLabels(ref, body, current) {
+  if (!designRuleFor(ref)) return { add: [], remove: [] };
+  const value = designLineOf(body, ref.forge);
+  const parsed = value == null ? null : parseDesignValue(value);
+  const isNew = Boolean(parsed?.ok && parsed.isNew);
+  const has = (l) => current.includes(l);
+  return {
+    add: isNew && !has(DESIGN_LABEL_OK) && !has(DESIGN_LABEL_MISSING) ? [DESIGN_LABEL_MISSING] : [],
+    remove: has(DESIGN_LABEL_MISSING) && (!isNew || has(DESIGN_LABEL_OK)) ? [DESIGN_LABEL_MISSING] : [],
+  };
 }
 
 function readText(path) {
   return readFileSync(resolve(path), 'utf8').replace(/^﻿/, '');
 }
 
-const blocking = (result) => result.errors.filter((f) => f.code !== 'M1');
+// A missing yes (migration, new design pattern) keeps the PR from being merged, not from being created or changed.
+const WAITS_FOR_YES = new Set(['M1', 'D3', 'D4']);
+const blocking = (result) => result.errors.filter((f) => !WAITS_FOR_YES.has(f.code));
 
 function summary(result) {
   const parts = [];
   const blockers = blocking(result);
   if (blockers.length) parts.push(`Fehler (${blockers.length}), deshalb wurde nichts angelegt oder geändert:\n${formatFindings(blockers)}`);
-  const hints = [...result.errors.filter((f) => f.code === 'M1'), ...result.warnings];
+  const hints = [...result.errors.filter((f) => WAITS_FOR_YES.has(f.code)), ...result.warnings];
   if (hints.length) parts.push(`Hinweise (${hints.length}):\n${formatFindings(hints)}`);
   return parts.join('\n\n');
 }
@@ -113,6 +140,8 @@ function dryRun(plan, result) {
     `Titel: ${plan.title}`,
     `Labels: ${plan.labels.join(', ') || 'keine'}`,
     `Migrationen: ${plan.files === null ? 'nicht geprüft' : plan.deleting ? 'löschen Daten' : 'löschen nichts'}`,
+    ...(result.design ? [`UI-Dateien: ${result.design.exempt ? `keine Design-Regel (${result.design.exempt})`
+      : result.design.uiFiles === null ? 'nicht geprüft' : result.design.uiFiles.length}`] : []),
     '',
     '--- Text ---',
     plan.body.trimEnd(),
@@ -148,12 +177,13 @@ async function create(o) {
     throw new UsageError(`Der Branch „${head}“ kommt aus einer Cloud-Sitzung. Mit --rename-to <art>/<thema> unter neuem Namen anlegen.`);
   }
   const prHead = o['rename-to'] ?? head;
-  const files = migrationFiles(dir, o.base, head);
+  const files = changedFiles(dir, o.base, head);
   const deleting = files ? deletesData(files).deleting : false;
-  const body = buildBody({ text: readText(o['body-file']), ...headLines(o, forge, deleting) });
-  const labels = forge === 'github' ? [typeLabelFor(prHead), deleting ? MIGRATION_LABEL_MISSING : null].filter(Boolean) : [];
+  const body = buildBody({ text: readText(o['body-file']), ...headLines(o, forge, deleting), design: o.design ?? null });
+  const typeLabels = forge === 'github' ? [typeLabelFor(prHead), deleting ? MIGRATION_LABEL_MISSING : null].filter(Boolean) : [];
+  const labels = [...typeLabels, ...designLabels({ forge, owner, repo }, body, typeLabels).add];
   const draft = o.flags.has('--draft');
-  const result = checkPr({ forge, repo, head: prHead, base: o.base, title: o.title, body, draft, labels, author: null,
+  const result = checkPr({ forge, owner, repo, head: prHead, base: o.base, title: o.title, body, draft, labels, author: null,
     createdAt: new Date().toISOString(), files: files ?? undefined });
 
   if (o.flags.has('--dry-run')) return dryRun({ forge, owner, repo, head: prHead, base: o.base, draft, title: o.title, labels, files, deleting, body }, result);
@@ -188,7 +218,7 @@ async function create(o) {
   }
   const s = [
     files === null
-      ? `Migrationen nicht geprüft: Der Diff gegen origin/${o.base} war nicht lesbar. ${forge === 'github'
+      ? `${result.design ? 'Migrationen und UI-Dateien' : 'Migrationen'} nicht geprüft: Der Diff gegen origin/${o.base} war nicht lesbar. ${forge === 'github'
         ? 'Mit „update“ prüft das Skript sie über die API.'
         : 'Die Merge-KI prüft sie vor dem Merge.'}`
       : '',
@@ -217,15 +247,20 @@ async function update(o) {
   // the merge AI removes it once the yes is given.
   const lines = headLines(o, forge, false);
   const carried = carriedStops(pr.body, forge);
-  const body = buildBody({ text: readText(o['body-file']), ...lines, stops: [...carried, ...lines.stops], removeStops: o.removeStops });
+  // The design line stays unless --design or the new text names one.
+  const text = readText(o['body-file']);
+  const design = o.design ?? (designLineOf(text, forge) === null ? designLineOf(pr.body, forge) : null);
+  const body = buildBody({ text, ...lines, stops: [...carried, ...lines.stops], removeStops: o.removeStops, design });
   const fromText = carried.filter((s) => s.endsWith(FROM_TEXT) && !o.removeStops.includes(s))
     .map((s) => `Aus dem alten Text als Stopp übernommen: „Merge-Stopp: ${s}“. Ist es keiner, mit --remove-stop "${s}" aufheben.`);
   const title = o.title ?? pr.title;
   const draft = o.flags.has('--draft') ? true : o.flags.has('--ready') ? false : pr.draft;
+  const marks = designLabels(ref, body, pr.labels);
   const add = forge === 'github'
-    ? [typeLabelFor(pr.head), deleting && !pr.labels.includes(MIGRATION_LABEL_OK) ? MIGRATION_LABEL_MISSING : null].filter((l) => l && !pr.labels.includes(l))
+    ? [typeLabelFor(pr.head), deleting && !pr.labels.includes(MIGRATION_LABEL_OK) ? MIGRATION_LABEL_MISSING : null, ...marks.add]
+      .filter((l) => l && !pr.labels.includes(l))
     : [];
-  const labels = [...pr.labels, ...add];
+  const labels = [...pr.labels, ...add].filter((l) => !marks.remove.includes(l));
   const result = checkPr({ ...pr, title, body, draft, labels });
 
   if (o.flags.has('--dry-run')) {
@@ -241,6 +276,7 @@ async function update(o) {
     await exec('gh', ['api', '-X', 'PATCH', `repos/${owner}/${repo}/pulls/${ref.number}`, '--input', '-'], JSON.stringify({ title, body }));
     if (draft !== pr.draft) await exec('gh', ['pr', 'ready', String(ref.number), '--repo', `${owner}/${repo}`, ...(draft ? ['--undo'] : [])]);
     for (const l of add) await addGithubLabel(ref, l);
+    for (const l of marks.remove) await removeGithubLabel(ref, l);
   } else {
     await bitbucketUpdate(ref, { title, description: body, draft });
   }
@@ -269,10 +305,35 @@ async function ready(o) {
   return 0;
 }
 
+// Only after Marc's yes in the cockpit: the note names the head he saw, so a later UI change voids the yes.
+async function designJa(o) {
+  const dir = resolve(o['repo-dir'] ?? '.');
+  const { forge, owner, repo } = repoOf(dir);
+  const ref = { forge, owner, repo, number: Number(o.number) };
+  if (!designRuleFor(ref)) throw new UsageError(`${owner}/${repo} hat keine Design-Regel.`);
+  const pr = await fetchPr(ref);
+  const value = designLineOf(pr.body, forge);
+  const parsed = value === null ? null : parseDesignValue(value);
+  if (!parsed?.ok || !parsed.isNew) {
+    throw new UsageError(`PR #${ref.number} hat oben kein „Design: neu – <Kurzbeschreibung>“. Ein Design-Ja gibt es nur für ein neues Muster.`);
+  }
+  const note = designApprovalNote(o.cockpit, pr.headSha);
+  const text = `${note}\n\nGilt für das neue Muster „${parsed.newText}“. Ändern sich danach UI-Dateien, gilt das Ja nicht mehr.`;
+  if (o.flags.has('--dry-run')) {
+    console.log(`Vermerk:\n${text}\n\nLabels: +${DESIGN_LABEL_OK}${pr.labels.includes(DESIGN_LABEL_MISSING) ? `, -${DESIGN_LABEL_MISSING}` : ''}\n\nNichts geändert (--dry-run).`);
+    return 0;
+  }
+  await exec('gh', ['api', '-X', 'POST', `repos/${owner}/${repo}/issues/${ref.number}/comments`, '--input', '-'], JSON.stringify({ body: text }));
+  if (!pr.labels.includes(DESIGN_LABEL_OK)) await addGithubLabel(ref, DESIGN_LABEL_OK);
+  if (pr.labels.includes(DESIGN_LABEL_MISSING)) await removeGithubLabel(ref, DESIGN_LABEL_MISSING);
+  console.log(`Vermerk „${note}“ geschrieben, Label „${DESIGN_LABEL_OK}“ gesetzt.\n\n${pr.url}`);
+  return 0;
+}
+
 async function main(argv) {
   try {
     const o = parseArgs(argv);
-    return await { create, update, ready }[o.command](o);
+    return await { create, update, ready, 'design-ja': designJa }[o.command](o);
   } catch (e) {
     if (e instanceof UsageError) {
       console.error(`${e.message}\n\n${USAGE}`);
