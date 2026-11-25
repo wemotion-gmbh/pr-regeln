@@ -16,6 +16,15 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 - **Branch-Namen** `<art>/<thema>` mit den Arten `feat`, `fix`, `hotfix`, `chore`, `refactor`, `docs`, `test`, `part`, `release`, `revert`. Feste Branches (`main`, `master`, `beta`, `live`), Bot-PRs und Branches des Revert-Knopfs sind immer erlaubt.
 - **Art-Labels** (nur GitHub) setzt die KI aus der Branch-Art: `hotfix` 🚑 Hotfix, `part` 🧩 Teilschritt, `revert` ⏪ Rücksetzen, `chore`/`refactor`/`docs`/`test` 🔧 Wartung, sonst keins.
 - **Migrationen, die Daten löschen** (hinzugefügte Zeile außerhalb von `down()` einer Datei in einem Ordner `database/migrations/`): auf GitHub rot, bis `🔑 Marcs Ja` dran ist; auf Bitbucket eine Warnung und eine `Merge-Stopp:`-Zeile. Diese Regel gilt immer und für alle PRs.
+- **Design im Hub** (Marc, E2170 A; nur GitHub `wemotion-gmbh/canou-hub`): Ändert ein PR UI-Dateien, nennt er oben in einer Kopfzeile seine Design-Karten: `Design: HM12, HM24`, `Design: neu – <Kurzbeschreibung>` (auch mit Karten davor) oder `Design: keine UI-Änderung`. Welche Pfade UI sind, steht an einer Stelle: `DESIGN_RULES` in `lib/pr-rules.mjs`. Ein neues Muster ist rot, bis `🎨 Marcs Design-Ja` dran ist; das Label setzt die KI nur nach Marcs Ja im Cockpit, mit einem Vermerk samt Head. Ändern sich danach UI-Dateien, gilt das Ja nicht mehr. Release-, Promotions-, Revert- und Bot-PRs sind ausgenommen.
+
+| Code | Fund |
+|---|---|
+| D1 | UI-Dateien geändert, aber keine `Design:`-Zeile. Abhilfe: Skill `hub-design-lesen`, dann `--design`. |
+| D2 | `Design:` in falscher Form, doppelt oder nicht oben im Kopf (in allen Repos). |
+| D3 | `Design: neu – …` ohne `🎨 Marcs Design-Ja`. |
+| D4 | `🎨 Marcs Design-Ja` ohne gültigen Vermerk, oder UI-Dateien seit dem Ja geändert (unbekannt zählt als geändert). |
+| D5 | Hinweis: `keine UI-Änderung`, obwohl UI-Dateien geändert sind. pr-pruefen sieht sich die Angabe an. |
 
 ## Stichtage
 
@@ -23,14 +32,17 @@ Die PR-Regeln für alle Repos von wemotion (GitHub-Organisation `wemotion-gmbh` 
 
 Seit Version 1.2.0 sind alle drei gesetzt, auf denselben Zeitpunkt: **02.11.2026 15:00 Berlin** (`2026-11-02T14:00:00Z`). Ein PR, der ab dann angelegt wird, muss die Regeln erfüllen. Ältere PRs fallen nie durch, ihre Funde bleiben Hinweise, bis auf die Migrationsregel.
 
+Die Design-Regel hat eigene Stichtage, `DESIGN_CUTOFFS` (seit Version 1.3.0): Ab `T1` **26.11.2026 00:00 Berlin** (`2026-11-25T23:00:00Z`) sind ihre Funde bei neu angelegten PRs Fehler, ab `T2` **03.12.2026 00:00 Berlin** (`2026-12-02T23:00:00Z`) auch bei älteren. Vorher sind sie Hinweise.
+
 ## Prüfprogramm
 
 ```
-npx --yes github:wemotion-gmbh/pr-regeln#v1 check <PR-URL> [--mark-migration] [--json]
+npx --yes github:wemotion-gmbh/pr-regeln#v1 check <PR-URL> [--mark-migration] [--mark-design] [--json]
 ```
 
 - Liest einen PR von GitHub (über `gh`) oder Bitbucket (über `BITBUCKET_USER` und `BITBUCKET_API_TOKEN`; unter Windows auch aus der Benutzerumgebung) und gibt das Ergebnis auf Deutsch aus. Zugangsdaten gibt es nie aus.
 - `--mark-migration` setzt auf GitHub `🔑 Marcs Ja fehlt`, wenn eine löschende Migration da ist und keins der beiden 🔑-Labels dran ist, und nimmt es ab, wenn `🔑 Marcs Ja` dazugekommen ist. `🔑 Marcs Ja` setzt es nie.
+- `--mark-design` setzt `🎨 Marcs Design-Ja fehlt` bei `Design: neu` ohne gültiges Ja und nimmt es ab, sobald das Ja gilt oder der PR kein neues Muster mehr nennt. Gilt ein `🎨 Marcs Design-Ja` nicht mehr (D4), nimmt es dieses ab. Setzen kann es `🎨 Marcs Design-Ja` nie.
 - `--json` gibt das Ergebnis als JSON aus.
 - Exit 0 bei Grün, 1 bei Fehlern, 2 bei falschem Aufruf, fehlendem Zugriff oder wenn ein Label nicht gesetzt werden konnte.
 - Einen Status an den PR schreibt es nicht.
@@ -44,7 +56,7 @@ Eingetragen im Marketplace [claude-plugins](https://github.com/wemotion-gmbh/cla
 ```
 
 - **Hook** (PreToolUse auf `Bash|PowerShell` und auf die MCP-Werkzeuge zum Anlegen und Ändern von PRs). Er prüft neue Branches, den Push neuer Branches, `gh pr create` und `gh pr edit`, PR-Aufrufe direkt über die API von GitHub und Bitbucket und die MCP-Werkzeuge. Text in Heredocs, Here-Strings, `echo` und `grep` lässt er aus; was er nicht sicher lesen kann, lässt er durch. Verweigern kann er nur das Anlegen eines PRs, und nur ab `T1` und in einem Repo von `wemotion-gmbh` oder `wemotion-bucket` (aus `--repo`, der API-Adresse, dem MCP-Aufruf oder dem Remote `origin`; bei `gh api` mit `{owner}` aus dem Remote). Lässt sich das Repo nicht bestimmen, etwa bei einem SSH-Host-Alias, gibt es nur einen Hinweis. Neue Branches, Pushes und Änderungen an PRs bekommen nur einen Hinweis, damit Sitzungs-Branches wie `claude/…` gepusht werden können; `pr-anlegen` benennt sie vor dem PR um. In fremden Repos sagt er nichts. „Erlauben“ gibt er nie aus, und fällt er aus, läuft der Befehl weiter. Treffer zählt er in `${CLAUDE_PLUGIN_DATA}/hits.json`.
-- **Skill `pr-anlegen`** mit dem Skript `scripts/create-pr.mjs` (`create`, `update`, `ready`). Er schreibt die Kopfzeilen, setzt das Art-Label, erkennt löschende Migrationen, prüft den PR und legt bei Rot nichts an. Aufruf und Optionen stehen in [skills/pr-anlegen/SKILL.md](skills/pr-anlegen/SKILL.md).
+- **Skill `pr-anlegen`** mit dem Skript `scripts/create-pr.mjs` (`create`, `update`, `ready`, `design-ja`). Er schreibt die Kopfzeilen (auch `--design`), setzt das Art-Label, erkennt löschende Migrationen, prüft den PR und legt bei Rot nichts an. Aufruf und Optionen stehen in [skills/pr-anlegen/SKILL.md](skills/pr-anlegen/SKILL.md).
 
 ## Umstellungslauf
 

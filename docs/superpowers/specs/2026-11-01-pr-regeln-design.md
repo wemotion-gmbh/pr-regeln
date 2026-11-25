@@ -128,6 +128,16 @@ Die Stichtage stehen als Konstanten in der Regeldatei. Sie werden an T0 gesetzt 
 
 **Gesetzt am 02.11.2026 (Marc, im Chat): T0 = T1 = T2 = 02.11.2026 15:00 Berlin (Version 1.2.0).** Eine Schonfrist braucht es nicht mehr, weil der Umstellungslauf alle offenen PRs schon umgestellt hat. Wer einen PR anlegt, schreibt ihn ab dann nach diesen Regeln.
 
+### 3.8 Design-Pflicht (E2170 A, Version 1.3.0)
+- **Wo.** Nur GitHub `wemotion-gmbh/canou-hub`, nur PRs, die UI-Dateien ändern. Die Pfade stehen an einer Stelle, `DESIGN_RULES` in der Regeldatei, und gleichen denen des Hub-Hooks `.claude/hooks/design-pflicht.mjs`: `app/`, `components/` (Dateien und Wortlisten), `config/`, `lib/**/config*`, `styles/`; ohne Tests, Test-Hilfen, `*.d.ts` und `app/api/`.
+- **Kopfzeile `Design:`**, die letzte im Kopfblock, genau eine: `Design: HM12, HM24` (Karten aus dem Design-System, `HM<nr>[a-z]` oder `FO<nr>`), `Design: neu – <Kurzbeschreibung>` (neues Muster, Karten davor erlaubt) oder `Design: keine UI-Änderung`. Vorher liest der Hub-Skill `hub-design-lesen` die Karten.
+- **Neues Muster.** `pr-anlegen` setzt `🎨 Marcs Design-Ja fehlt`, die Prüfung ist rot (D3), aber das Skript legt den PR trotzdem an, wie bei M1. Der Entwurf geht über `redesign-entwurf` zu Marc, die Frage ins Cockpit. Nach seinem Ja schreibt `create-pr.mjs design-ja --cockpit E<nr>` den Vermerk `🎨 Marcs Design-Ja (Cockpit E<nr>) für Head <sha>` und tauscht das Label gegen `🎨 Marcs Design-Ja`. Das Label setzt die KI nur nach Marcs Ja.
+- **Ja verfällt.** Die Prüfung liest den letzten Vermerk und vergleicht `<sha>` mit dem Head (GitHub-Compare). Ändern sich UI-Dateien, fehlt der Vermerk oder ist der Vergleich nicht lesbar, ist das Ja ungültig (D4). `check --mark-design` nimmt dann `🎨 Marcs Design-Ja` ab und setzt `🎨 Marcs Design-Ja fehlt`.
+- **pr-pruefen** vergleicht die Änderung mit den genannten Karten. Weicht sie ohne `Design: neu` ab, fehlt eine Karte oder stimmt sie nicht, ist das Kritisch. `keine UI-Änderung` trotz UI-Dateien (D5) sieht es sich an.
+- **Ausnahmen:** Bots, Promotions-Heads (feste Branches), Release- und Revert-PRs.
+- **Stichtage** `DESIGN_CUTOFFS`: T1 = 26.11.2026 00:00 Berlin (neu angelegte PRs: Fehler), T2 = 03.12.2026 00:00 Berlin (auch ältere). Vorher Hinweise.
+- **Kein Branch-Schutz.** Durchgesetzt wird über die Prüfung, pr-pruefen und die Merge-KI.
+
 ## 4. Was gebaut wird
 
 ### 4.1 Repo `wemotion-gmbh/pr-regeln` (öffentlich, E331)
